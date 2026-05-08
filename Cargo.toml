@@ -1,0 +1,9 @@
+[package]
+name = "make-agents-cheaper"
+version = "0.1.0"
+edition = "2021"
+description = "Rust CLI for improving prompt cache hit rate in coding-agent workflows"
+license = "MIT"
+
+[dependencies]
+toml = "0.8"
