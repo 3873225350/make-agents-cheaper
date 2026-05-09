@@ -12,7 +12,7 @@ real coding fixture: done
 real coding-task suite v1: done
 Claude skill adapter scaffold: done
 checkpoint before next experiment: done
-larger real coding-task suite v2: defined
+larger real coding-task suite v2: fixture scaffolded
 real coding-task pilot: planned
 ```
 
@@ -64,7 +64,7 @@ and can reduce observed input cost without reducing task success.
 2. [~] Build a larger real-coding evaluation suite.
    - Keep v1 as the smoke/fixture suite.
    - [x] Define a v2 suite with larger tasks, more realistic file edits, failing-test repair, multi-turn planning, and dynamic drift.
-   - [ ] Implement the ignored local fixture under `runs/fixtures/real-coding-v2/`.
+   - [x] Implement the ignored local fixture scaffold under `runs/fixtures/real-coding-v2/`.
    - [ ] Make the suite strong enough to act like a small dataset, not just a demo.
 3. [ ] Run standardized paired A/B experiments.
    - Baseline warm-up.

@@ -23,5 +23,23 @@ docs/task-suites/real-coding-ablation-v2.md
 ## Status
 
 ```text
-defined
+fixture scaffolded
 ```
+
+## Local Fixture
+
+The ignored local fixture was created at:
+
+```text
+runs/fixtures/real-coding-v2/
+```
+
+Base validation passed:
+
+```bash
+cd runs/fixtures/real-coding-v2
+bash task-reset.sh base
+bash task-validate.sh base
+```
+
+The task-specific validations are intentionally stricter than the baseline. They are expected to fail until an agent completes the corresponding task.
