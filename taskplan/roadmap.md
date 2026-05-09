@@ -12,7 +12,7 @@ real coding fixture: done
 real coding-task suite v1: done
 Claude skill adapter scaffold: done
 checkpoint before next experiment: done
-larger real coding-task suite v2: planned
+larger real coding-task suite v2: defined
 real coding-task pilot: planned
 ```
 
@@ -37,6 +37,7 @@ and can reduce observed input cost without reducing task success.
 | 1 | Preserve the micro benchmark as a sanity check | `subtasks/01-micro-benchmark.md` | [x] done |
 | 2 | Build a real coding-task fixture repo | `subtasks/02-fixture-repo.md` | [x] done |
 | 3 | Define realistic task-suite v1 | `subtasks/03-real-coding-task-suite.md` | [x] done |
+| 3a | Define larger real-coding task-suite v2 | `subtasks/09-real-coding-v2-suite.md` | [x] defined |
 | 4 | Run paired A/B pilot on 1-2 tasks | `subtasks/04-pilot-run.md` | [ ] planned |
 | 5 | Scale to a full task matrix | `subtasks/05-scale-evaluation.md` | [ ] planned |
 | 6 | Add analysis and paper-facing tables | `subtasks/06-analysis-and-paper.md` | [ ] planned |
@@ -60,10 +61,11 @@ and can reduce observed input cost without reducing task success.
    - Commit or clearly stage boundaries for `make-agents-cheaper`.
    - Commit the newly created `make-agents-cheaper-skill` repo.
    - Record that existing dirty files not related to the next experiment were left untouched.
-2. [ ] Build a larger real-coding evaluation suite.
+2. [~] Build a larger real-coding evaluation suite.
    - Keep v1 as the smoke/fixture suite.
-   - Create a v2 suite with larger tasks, more realistic file edits, failing-test repair, multi-turn planning, and dynamic drift.
-   - Make the suite strong enough to act like a small dataset, not just a demo.
+   - [x] Define a v2 suite with larger tasks, more realistic file edits, failing-test repair, multi-turn planning, and dynamic drift.
+   - [ ] Implement the ignored local fixture under `runs/fixtures/real-coding-v2/`.
+   - [ ] Make the suite strong enough to act like a small dataset, not just a demo.
 3. [ ] Run standardized paired A/B experiments.
    - Baseline warm-up.
    - Cache-friendly warm-up.
