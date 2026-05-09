@@ -1,0 +1,54 @@
+\section{Implementation and Roadmap}
+\label{sec:implementation}
+
+The current repository contains a Rust CLI and Codex skill. The CLI parses TOML configuration, reports cache-friendliness findings, and prints copy-ready HTTP or WebSocket templates. The first target is deliberately narrow: local Codex configuration readiness for XAI Router-style cache-friendly routing.
+
+\subsection{Current Commands}
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\small,breaklines=true,frame=single]
+cargo run --quiet
+cargo run --quiet -- --config /path/to/config.toml
+cargo run --quiet -- --print-ws-config
+cargo run --quiet -- --print-http-config
+\end{lstlisting}
+
+\subsection{Planned Benchmark Commands}
+
+The next implementation step is a measurement layer:
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\small,breaklines=true,frame=single]
+make-agents-cheaper bench validate-schema runs/example.jsonl
+make-agents-cheaper bench compare runs/baseline.jsonl runs/cache-friendly.jsonl
+\end{lstlisting}
+The first version can operate on exported usage records. Later versions may collect traces directly from supported agent runners when the user explicitly enables tracing.
+
+\subsection{Run Record Schema}
+
+Each record should be JSONL so logs remain append-only and easy to inspect:
+\begin{lstlisting}[basicstyle=\ttfamily\scriptsize,breaklines=true,frame=single]
+{
+  "task_id": "rust-cli-add-version",
+  "run_id": "2026-05-09-cache-friendly-01",
+  "condition": "cache_friendly",
+  "turn_index": 3,
+  "agent": "codex",
+  "model": "gpt-5.4",
+  "transport": "responses_ws",
+  "input_tokens": 82000,
+  "cached_input_tokens": 76000,
+  "output_tokens": 3000,
+  "ttft_ms": 1200,
+  "total_latency_ms": 24000,
+  "tool_calls": 5,
+  "validation_command": "cargo test --locked",
+  "validation_passed": true,
+  "task_success": true
+}
+\end{lstlisting}
+
+\subsection{Expansion Beyond Codex}
+
+Later phases should add agent-specific adapters only when reliable local signals exist. The project should not guess hidden cache behavior. For each new agent, the adapter must document what can be measured directly, what is inferred, and what cannot be observed.
+
+\subsection{Reusable Skill Packaging}
+
+Because the intervention lives at the harness layer, it can be distributed as an agent skill rather than only as a binary. A skill can encode the operating policy: inspect first, avoid prompt rewriting, preserve task semantics, keep provider/model/transport stable, and measure uncached paid input alongside task success. This lets Codex adopt the policy first while leaving room for Claude Code, Cursor, and custom agent runners to reuse the same cache-hit discipline through their own extension surfaces.

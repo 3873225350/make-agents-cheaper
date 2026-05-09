@@ -1,0 +1,34 @@
+\section{Metric Definitions}
+\label{app:metrics}
+
+\begin{table}[h]
+\centering
+\caption{Detailed metric dictionary for benchmark logs.}
+\label{tab:metric-dictionary}
+\small
+\begin{tabularx}{\linewidth}{@{}lX@{}}
+\toprule
+\textbf{Metric} & \textbf{Definition} \\
+\midrule
+\texttt{input\_tokens} & Total input tokens reported by the provider for one model call. \\
+\texttt{cached\_input\_tokens} & Input tokens reported as cached by the provider. If absent, mark as missing rather than assuming zero. \\
+\texttt{uncached\_input\_tokens} & \texttt{input\_tokens - cached\_input\_tokens}. This is the primary paid-input reduction target. \\
+\texttt{cache\_hit\_rate} & \texttt{cached\_input\_tokens / input\_tokens}. \\
+\texttt{estimated\_actual\_cost} & Cost using uncached input price, cached input price, and output price. \\
+\texttt{estimated\_full\_cost} & Counterfactual cost if all input tokens were uncached. \\
+\texttt{ttft\_ms} & Time to first token, measured at the client or trace layer. \\
+\texttt{task\_success} & Boolean or reviewer-scored task outcome using a fixed rubric. \\
+\texttt{validation\_passed} & Whether the task-specific validation command passed. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Interpretation Rules}
+\label{app:interpretation}
+
+A run should not be considered successful merely because it reports lower total tokens. The preferred claim is narrower and more honest:
+\begin{quote}
+The cache-friendly condition reduced paid uncached input while preserving task success.
+\end{quote}
+If a strategy lowers cost but increases failed tasks, extra turns, or unintended file changes, it should be reported as a quality regression rather than a win.
+

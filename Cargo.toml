@@ -6,4 +6,6 @@ description = "Rust CLI for improving prompt cache hit rate in coding-agent work
 license = "MIT"
 
 [dependencies]
+serde_json = "1"
+sha2 = "0.10"
 toml = "0.8"

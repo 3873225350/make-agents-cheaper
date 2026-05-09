@@ -5,4 +5,15 @@ __pycache__/
 dist/
 build/
 target/
+runs/
 *.egg-info/
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+paper/main.pdf
+*.synctex.gz
+references/keep-codex-fast/

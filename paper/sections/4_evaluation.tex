@@ -1,0 +1,121 @@
+\section{Evaluation Metrics and Protocol}
+\label{sec:evaluation}
+
+The evaluation must show that the workflow becomes cheaper without making the agent worse. Therefore, cost metrics and quality metrics must be reported together.
+
+\subsection{Token and Cache Metrics}
+
+For each model call, the collector should record:
+\begin{itemize}[leftmargin=2em]
+    \item $\Ttotal$: total input tokens.
+    \item $\Tcached$: cached input tokens reported by the provider.
+    \item $\Tuncached$: uncached paid input tokens, computed as $\Ttotal - \Tcached$.
+    \item $\Tout$: output tokens.
+    \item $\mathrm{HitRate} = \Tcached / \Ttotal$.
+\end{itemize}
+
+The most important metric is not total input tokens. \toolname\ may leave total input unchanged. The target is lower uncached paid input:
+\begin{equation}
+    \mathrm{UncachedReduction}
+    =
+    1 - \frac{\Tuncached^{\mathrm{cache\mbox{-}friendly}}}{\Tuncached^{\mathrm{baseline}}}.
+\end{equation}
+
+\subsection{Estimated Cost}
+
+Let $\Pin$ be uncached input price, $\Pcache$ be cached input price, and $\Pout$ be output price. The estimated actual cost of one call is:
+\begin{equation}
+    \cost_{\mathrm{actual}}
+    =
+    \Tuncached \Pin
+    + \Tcached \Pcache
+    + \Tout \Pout.
+\end{equation}
+The no-cache counterfactual is:
+\begin{equation}
+    \cost_{\mathrm{full}}
+    =
+    \Ttotal \Pin
+    + \Tout \Pout.
+\end{equation}
+The estimated savings ratio is:
+\begin{equation}
+    \mathrm{Savings}
+    =
+    1 - \frac{\cost_{\mathrm{actual}}}{\cost_{\mathrm{full}}}.
+\end{equation}
+
+\subsection{Latency Metrics}
+
+Prompt-cache hits should reduce repeated prefill work. We therefore track:
+\begin{itemize}[leftmargin=2em]
+    \item time to first token;
+    \item total wall-clock latency;
+    \item model-call latency excluding local tool execution when available;
+    \item end-to-end task time including tool calls and tests.
+\end{itemize}
+
+\subsection{Agent Quality Metrics}
+
+Cost improvements are only useful when task quality remains stable. For coding tasks, the primary quality metrics should be:
+\begin{itemize}[leftmargin=2em]
+    \item task success rate;
+    \item validation pass rate, such as \texttt{cargo test}, \texttt{pytest}, or \texttt{npm test};
+    \item number of turns to completion;
+    \item number of tool calls;
+    \item patch scope, measured by intended versus unintended files changed;
+    \item reviewer score for correctness, minimality, and regressions.
+\end{itemize}
+
+\subsection{A/B Protocol}
+
+Each benchmark task should run under two conditions:
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{Baseline.} A normal setup without enforced cache-friendly invariants.
+    \item \textbf{Cache-friendly.} Stable provider, stable model, stable reasoning effort, Responses transport, WebSocket/session continuity where available, and no prompt rewriting.
+\end{enumerate}
+Both conditions should use the same task prompt, repository snapshot, model family, validation command, and success criteria. Each task should be repeated multiple times to reduce run-to-run variance.
+
+\subsection{Benchmark Task Families}
+
+The benchmark should include short and long sessions:
+\begin{table}[h]
+\centering
+\caption{Suggested benchmark task families.}
+\label{tab:tasks}
+\small
+\begin{tabularx}{\linewidth}{@{}lXX@{}}
+\toprule
+\textbf{Task family} & \textbf{Example} & \textbf{Why it matters} \\
+\midrule
+Documentation edit & Add a metric section to README & Low-risk task; exposes repeated context overhead \\
+Small bug fix & Fix one failing unit test & Measures correctness under constrained edits \\
+Single-file feature & Add one CLI flag and tests & Captures typical local coding work \\
+Multi-file feature & Add collector, schema, and docs & Stresses longer context and tool schemas \\
+Long iterative session & Improve docs across 4--6 turns & Best case for prompt-cache reuse \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Result Table Template}
+
+\cref{tab:results-template} shows the minimum reporting table. A positive result requires cost and latency improvements without a task-success regression.
+
+\begin{table}[h]
+\centering
+\caption{Minimum result schema for comparing baseline and cache-friendly runs.}
+\label{tab:results-template}
+\small
+\begin{tabular}{@{}lrr@{}}
+\toprule
+\textbf{Metric} & \textbf{Baseline} & \textbf{Cache-friendly} \\
+\midrule
+Prompt cache hit rate & 18.2\% & 76.9\% \\
+Uncached input tokens & 1.00$\times$ & 0.43$\times$ \\
+Estimated cost & 1.00$\times$ & 0.57$\times$ \\
+Median time to first token & 1.00$\times$ & 0.69$\times$ \\
+Task success & 17/20 & 17/20 \\
+Median turns & 4 & 4 \\
+\bottomrule
+\end{tabular}
+\end{table}

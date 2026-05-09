@@ -1,0 +1,27 @@
+\section{Introduction}
+\label{sec:introduction}
+
+Recent model-side efficiency work, exemplified by systems such as DeepSeek v4, has made large language models cheaper through improved training recipes, sparse architectures, distillation, optimized serving, batching, and inference kernels. Researchers with training resources can work directly on the model. Other researchers work on inference systems: cache, KV cache, batching, kernels, and serving paths. These directions still mostly stay inside the model or serving layer.
+
+Our starting point was more basic. We wanted to understand why DeepSeek v4-style systems make tokens cheaper, what cache hit actually means, and how cache-hit behavior differs from ordinary model use. Then the question became: in the agent era, what can an individual builder do outside the model?
+
+The answer came from building agent observability systems in the style of \texttt{claude-trace} and \texttt{codex-trace}. These traces make the request prefix visible. They show that a coding-agent request is not simply the latest user instruction; it is assembled by an \emph{agent harness}: the client-side machinery that assembles prompts, selects tools, chooses transport, preserves session identifiers, routes requests, and records traces. Its early tokens often contain stable policy, tools, repository rules, and routing context. Once this structure is visible, prompt caching becomes a concrete systems problem rather than a vague billing feature.
+
+In long coding sessions, the new user request is often small relative to the stable prefix. A single turn may contain tens of thousands of repeated input tokens before the newest task-specific content appears. Provider-side prompt caching can discount or accelerate this repeated prefix when later requests begin with sufficiently similar tokens. However, cache hits are fragile. Provider drift, model changes, transport changes, dynamic bridge prompts, or session routing changes can cause repeated content to be processed as uncached input.
+
+\toolname\ explores a simple thesis:
+\begin{quote}
+Do not remove context. Make repeated context cacheable.
+\end{quote}
+Operationally, this means: structure the harness payload so stable prompt components come first and dynamic components come later, without changing the task semantics.
+The project begins with \codex\ because its local configuration exposes concrete cache-relevant controls: provider selection, \responses\ transport, WebSocket support, environment-key routing, model identity, and reasoning effort. The repository is intentionally named more broadly because the same idea should later apply to Claude Code, Cursor, custom agent runners, and multi-agent routers.
+
+This distinction is important for reuse. Once the cache discipline is specified as a harness policy rather than as a Codex-only trick, it can be packaged as a skill that different agents adopt without sharing the same UI or runtime.
+
+This report makes four contributions:
+\begin{enumerate}[leftmargin=2em]
+    \item It distinguishes model-side efficiency from what an agent builder can do at the harness layer.
+    \item It formalizes prompt-cache friendliness as a measurable property of an agent workflow rather than a vague configuration preference.
+    \item It describes the first \toolname\ implementation: a read-only Rust CLI and Codex skill for auditing cache-hit readiness.
+    \item It proposes an evaluation protocol that measures cost reduction and task quality together, avoiding the misleading claim that total tokens must decrease.
+\end{enumerate}

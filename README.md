@@ -8,6 +8,61 @@ The idea is simple:
 
 > Do not remove context. Make repeated context cacheable.
 
+## Origin
+
+Many researchers with training resources work on the model side: training, architecture, distillation, and serving. Many others work on the inference side: cache, KV cache, batching, kernels, and lower-latency serving. These are still mostly model-layer or serving-layer directions.
+
+This project did not start from "let's make agents cheaper." It started from trying to understand why DeepSeek v4-style systems make tokens cheaper, what cache hit really means, and how this differs from ordinary model use.
+
+At the same time, while building `claude-trace` and `codex-trace` style tooling for agent visualization and explainability, we saw the concrete request payload. A coding-agent request is not just the user's latest message. It is a harness-assembled bundle of stable instructions, tool schemas, repo rules, session state, transport choices, and dynamic task data.
+
+That made the key question practical:
+
+```text
+In the agent era, what can an individual builder do outside the model?
+```
+
+The answer we explore here is small but useful: make the repeated prefix stable and measurable, so prompt cache hit rate can improve without removing context.
+
+## Positioning: Outside The Model
+
+Model-side work such as cheaper training, sparse inference, distillation, batching, and serving optimization makes each model call cheaper by improving the model or inference stack.
+
+`make-agents-cheaper` works outside the model, at the agent harness layer:
+
+```text
+model-side efficiency:
+  make the model cheaper
+
+harness layer:
+  make repeated agent context cheaper to reuse
+```
+
+The tool does not train a model and does not change model weights. It also is not ordinary prompt shortening. It focuses on the agent harness layer: the configuration, request envelope, transport, session route, and stable prompt prefix that wrap every coding-agent call.
+
+The practical rule is:
+
+```text
+Structure your prompt so stable components come first
+and dynamic components come later.
+```
+
+For this project, "prompt" means the full agent harness payload, not just the user's natural-language instruction.
+
+This is why it can later be packaged as a reusable skill. The same cache-hit discipline can be applied by different agents even if their model providers and UI surfaces differ.
+
+## Product Map And Experimental Object
+
+There are three related layers, but they should not be mixed:
+
+- `make-agents-cheaper`: the Rust audit/eval tool. This is the experiment and measurement engine. It fingerprints prompt layers, checks tool schema stability, analyzes cache breakpoints, records token usage, and compares baseline vs cache-friendly runs.
+- `make-agents-cheaper-skill`: the reusable skill packaging layer. A skill turns the method into instructions and runbooks that another agent can apply, but the skill itself is not the primary measurement instrument.
+- `cheapcode` or a future cheaper agent: a possible full agent harness that would own prompt assembly, tools, memory, and routing directly. This is a later product direction, not the current experimental object.
+
+In current experiments, Codex is the development environment used to build the tooling and write the reports. The studied harness is Claude Code, and the backend model/provider in the current setup is MiMo, such as `mimo-v2.5-pro`. The paper should therefore describe the object of study as a Claude Code harness running on a MiMo-compatible model route, with `make-agents-cheaper` used as the audit/eval instrumentation.
+
+So yes: experiments use the audit/eval layer, not the skill layer, as evidence. The skill layer is for reuse and deployment of the same cache-friendly discipline after the method has been made explicit and measurable.
+
 ## Why This Can Be Cheap
 
 Coding agents are expensive in long sessions because every turn can resend a large repeated prefix:
@@ -76,6 +131,12 @@ Or run the CLI directly:
 cargo run --quiet
 ```
 
+Run explicit Codex config audit:
+
+```bash
+cargo run --quiet -- audit --config ~/.codex/config.toml
+```
+
 Print the recommended WebSocket template:
 
 ```bash
@@ -93,6 +154,69 @@ Inspect a custom config path:
 ```bash
 cargo run --quiet -- --config /path/to/config.toml
 ```
+
+## New: Skill / Audit / Eval Commands
+
+These commands are the first executable pieces of the portable cache-hit layer for existing agents.
+
+Fingerprint prompt or harness layers without printing private prompt text:
+
+```bash
+cargo run --quiet -- fingerprint --input layers.json
+cargo run --quiet -- fingerprint --input current-layers.json --previous previous-layers.json
+```
+
+Inspect tool schema stability:
+
+```bash
+cargo run --quiet -- tool-schema --input tools.json
+cargo run --quiet -- tool-schema --input current-tools.json --previous previous-tools.json
+```
+
+Inspect explicit `cache_control` breakpoint placement:
+
+```bash
+cargo run --quiet -- breakpoints --input request.json
+```
+
+Compare baseline and cache-friendly benchmark records:
+
+```bash
+cargo run --quiet -- eval --baseline baseline.jsonl --candidate cache-friendly.jsonl
+```
+
+Print per-task token usage:
+
+```bash
+cargo run --quiet -- task-report --baseline baseline.jsonl --candidate cache-friendly.jsonl
+```
+
+Compare with provider prices, expressed as USD per million tokens:
+
+```bash
+cargo run --quiet -- eval \
+  --baseline baseline.jsonl \
+  --candidate cache-friendly.jsonl \
+  --uncached-input-per-mtok <USD> \
+  --cached-input-per-mtok <USD> \
+  --output-per-mtok <USD>
+```
+
+Print a cache-aware compact / reactivation template:
+
+```bash
+cargo run --quiet -- compact-template
+```
+
+The expected JSONL benchmark record format is documented in `docs/evaluation-metrics.md`.
+
+Initialize a reproducible experiment log directory:
+
+```bash
+cargo run --quiet -- init-experiment --dir runs/2026-05-09-claude-mimo-cache
+```
+
+Full protocol: `docs/evaluation-protocol.md`.
 
 ## Recommended Codex WebSocket Config
 
@@ -156,6 +280,7 @@ env_key = "XAI_API_KEY"
 ## What It Does Not Do
 
 - It does not make every token cheap.
+- It does not train or fine-tune a model.
 - It does not cache model outputs or replay old answers.
 - It does not share cache across organizations.
 - It does not mutate `~/.codex/config.toml` unless a future command explicitly implements that and you ask for it.
@@ -165,9 +290,31 @@ env_key = "XAI_API_KEY"
 ## Roadmap
 
 - **Phase 1:** Codex config audit and XAI Router-friendly templates.
-- **Phase 2:** benchmark helpers for cache hit rate, cached tokens, uncached paid input, latency, and task success.
-- **Phase 3:** Claude Code and Cursor cache-friendliness checks where reliable local signals exist.
+- **Phase 2:** prefix fingerprinting, tool-schema drift checks, breakpoint analysis, benchmark comparison, and cache-aware compact templates.
+- **Phase 3:** package reusable agent skills for Codex-first workflows, then Claude Code and Cursor cache-friendliness checks where reliable local signals exist.
 - **Phase 4:** router and multi-agent workflow diagnostics.
+
+## Technical Report And Evaluation
+
+- LaTeX report: `paper/main.tex`
+- Evaluation metric spec: `docs/evaluation-metrics.md`
+- Full experiment protocol: `docs/evaluation-protocol.md`
+- Paired ablation runbook: `docs/paired-ablation-runbook.md`
+- First task-suite dataset: `docs/task-suites/claude-cache-ablation-v1.md`
+- Real coding-task suite: `docs/task-suites/real-coding-ablation-v1.md`
+- Phenomena analysis log: `docs/phenomena-analysis.md`
+- MiMo token accounting note: `docs/mimo-token-accounting.md`
+- Long-term task plan: `taskplan/roadmap.md`
+
+The evaluation goal is not to show fewer total tokens. It is to show:
+
+```text
+cached tokens go up
+uncached paid input goes down
+estimated cost goes down
+latency does not regress
+task success does not regress
+```
 
 ## Build
 
@@ -202,4 +349,3 @@ Or clone/copy this folder into your Codex skills directory as `make-agents-cheap
 Report mode does not write files. It prints only configuration health and hides environment variable values. It never prints API keys.
 
 If you share reports publicly, review local paths and provider names first.
-

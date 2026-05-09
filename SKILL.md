@@ -9,6 +9,8 @@ metadata:
 
 Use this skill to inspect and improve prompt-cache friendliness for coding-agent workflows. Phase 1 is Codex-focused: lower repeated-input cost and latency through stable official prompt caching, not by changing task semantics.
 
+This is outside-the-model cache work, not model training. The skill works at the agent harness layer: configuration, request envelope, transport, session route, and stable prompt prefix.
+
 ## Safety Rules
 
 - Default to report-only. Do not modify `~/.codex/config.toml` unless the user explicitly asks.
@@ -16,6 +18,7 @@ Use this skill to inspect and improve prompt-cache friendliness for coding-agent
 - Do not promise universal savings. Say that savings depend on provider pricing, cache policy, stable prefixes, and session routing.
 - Preserve Codex semantics. Do not recommend request rewriting that changes `store`, `stream`, `instructions`, conversation continuity, or tool schemas merely to make cache metrics look better.
 - Prefer stable configuration and stable sessions over aggressive prompt compression.
+- Frame this as cache-aware agent harness engineering. Do not describe it as model training, fine-tuning, or output replay.
 
 ## Default Workflow
 
@@ -41,7 +44,19 @@ cargo run --quiet -- --print-ws-config
 cargo run --quiet -- --print-http-config
 ```
 
-5. If the user wants you to edit config, first show the exact intended config and ask for confirmation. Back up the existing config before writing.
+5. For trace/evaluation work, use the first executable checks:
+
+```bash
+cargo run --quiet -- fingerprint --input layers.json
+cargo run --quiet -- tool-schema --input tools.json
+cargo run --quiet -- breakpoints --input request.json
+cargo run --quiet -- eval --baseline baseline.jsonl --candidate cache-friendly.jsonl
+cargo run --quiet -- task-report --baseline baseline.jsonl --candidate cache-friendly.jsonl
+cargo run --quiet -- init-experiment --dir runs/experiment-name
+cargo run --quiet -- compact-template
+```
+
+6. If the user wants you to edit config, first show the exact intended config and ask for confirmation. Back up the existing config before writing.
 
 ## Recommended Policy
 
@@ -51,9 +66,15 @@ cargo run --quiet -- --print-http-config
 - Prefer WebSocket mode for long-running interactive coding when available.
 - Keep repeated workspace instructions stable and put changing task details later.
 - Treat cache hit rate as an engineering outcome, not a trick.
+- Package reusable advice as agent skills once the policy is stable, so different agents can reuse the same harness-level cache discipline.
+- Start with detection in existing agents; move policies into `cheapcode` only when the native framework controls prompt assembly and tool registry.
 
 ## User-Facing Explanation
 
 Say this in plain language:
 
 > This makes agents cheaper only when repeated prompt prefixes stay identical enough for the provider cache to hit. Phase 1 focuses on Codex. The skill helps keep that path stable; it does not fake cache, hide context, or change the model's answer.
+
+Also say:
+
+> Model-side projects make the model itself cheaper. This project makes the agent harness more cache-friendly, so repeated context is more likely to be billed or processed as cached input.

@@ -1,0 +1,42 @@
+\section{Background and Motivation}
+\label{sec:background}
+
+\subsection{Model-Side Work and Harness-Side Work}
+
+Model-side work asks whether one model invocation can be made cheaper through better architecture, training, compression, or serving. Inference-system work asks whether serving can be faster or cheaper through cache, KV cache, batching, kernels, and routing. \toolname\ asks a smaller question outside the model: can the agent harness organize repeated invocations so that repeated context is more likely to be cached?
+
+The harness layer includes prompt assembly, tool registration, configuration, transport selection, session identifiers, routing hints, trace collection, and validation commands. These elements are often outside the model but inside the agent workflow, which makes them good targets for reusable skills and local audit tools.
+
+\subsection{Trace-Driven Discovery}
+
+The project began from trace and observability engineering rather than from a standalone cost hack. Tools such as \texttt{claude-trace} and \texttt{codex-trace} are built to expose what an agent sends, which tools it registers, how requests are routed, and where time and tokens are spent. In that view, repeated prefixes become concrete artifacts: they can be inspected, compared across turns, and correlated with provider usage records.
+
+This made the question practical. We were not trying to start with a new cost-saving trick. We were trying to understand cache hit, then asking what part of it is reachable to an individual agent builder. The reachable part is the harness: keep stable content stable, avoid unnecessary early-prefix drift, and measure whether cached input increases.
+
+\subsection{Prompt Cache Hit Rate}
+
+Prompt caching rewards repeated prefixes. Let $\Ttotal$ be total input tokens, $\Tcached$ be provider-reported cached input tokens, and $\Tuncached$ be input tokens processed as uncached:
+\begin{equation}
+    \Tuncached = \Ttotal - \Tcached.
+\end{equation}
+We define prompt cache hit rate as:
+\begin{equation}
+    \mathrm{HitRate} = \frac{\Tcached}{\Ttotal}.
+\end{equation}
+This metric does not mean that the agent sends fewer tokens. Instead, it measures the share of input tokens that the provider can treat as repeated cached context.
+
+\subsection{Why Prefix Stability Is Fragile}
+
+Coding-agent requests can change before the user task appears. Common sources of early prefix drift include dynamic IDE state, tool-schema changes, proxy-injected bridge prompts, request timestamps, provider rotation, transport changes, model changes, and reasoning-effort changes. The practical objective is not zero change. It is stable prefix discipline: keep stable content stable and avoid moving dynamic content into the early request prefix.
+
+This is related to prompt engineering but narrower. The project does not primarily search for better task wording. It treats the repeated prompt prefix as part of the harness contract and asks whether the harness preserves it in a cache-friendly form.
+
+A concise rule follows:
+\begin{quote}
+Structure the prompt so stable components come first and dynamic components come later.
+\end{quote}
+Here, ``prompt'' refers to the full harness payload, not only the user's natural-language text.
+
+\subsection{Codex-First Scope}
+
+The first supported target is \codex. A cache-friendly Codex setup should keep the provider, model, reasoning effort, and transport stable within a task. For XAI Router-style deployments, a local audit can verify that \texttt{base\_url} points to the intended router, \texttt{wire\_api = "responses"} is configured, WebSocket mode is consistently enabled when desired, and the configured \texttt{env\_key} exists in the current shell.

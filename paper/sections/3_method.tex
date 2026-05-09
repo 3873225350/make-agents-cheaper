@@ -1,0 +1,42 @@
+\section{Method}
+\label{sec:method}
+
+\toolname\ currently implements a conservative read-only audit. It inspects local configuration and reports whether the setup is likely to preserve prompt-cache opportunities. The tool's design principle is to stabilize the request envelope without rewriting prompts.
+
+\subsection{Cache-Friendly Invariants}
+
+The first release checks five invariants:
+\begin{enumerate}[leftmargin=2em]
+    \item \textbf{Provider stability.} The active provider should point to the intended cache-aware route, such as \texttt{https://api.xairouter.com}.
+    \item \textbf{Responses transport.} Codex-style workflows should use \texttt{wire\_api = "responses"} rather than compatibility paths that may rewrite request bodies.
+    \item \textbf{Session continuity.} WebSocket support and feature flags should be enabled together when the user wants long-session continuity.
+    \item \textbf{Credential readiness.} The configured \texttt{env\_key} should exist in the current shell, but its value must never be printed.
+    \item \textbf{Model-setting stability.} Model and reasoning-effort settings should remain stable within a benchmark task or real coding session.
+\end{enumerate}
+
+\subsection{What the Tool Does Not Change}
+
+The tool does not modify \texttt{\textasciitilde/.codex/config.toml} by default. It does not delete context, reduce tool schemas, alter system instructions, or change the model's task. These exclusions matter: an apparent cost reduction that comes from removing important context may degrade task success and is not the target of this project.
+
+\subsection{Cache-Aware Agent Pipeline}
+
+The broader pipeline pattern is shown in \cref{tab:pipeline}. The core intervention is small: reduce avoidable early-prefix drift and keep repeated content on a stable route.
+
+\begin{table}[h]
+\centering
+\caption{Pipeline-side controls for prompt-cache friendliness.}
+\label{tab:pipeline}
+\small
+\begin{tabularx}{\linewidth}{@{}lXX@{}}
+\toprule
+\textbf{Control} & \textbf{Cache-friendly behavior} & \textbf{Failure mode} \\
+\midrule
+Provider & Same task stays on one provider/router path & Requests bounce across providers or keys \\
+Transport & Responses/WebSocket path is stable & Compatibility layers rewrite request bodies \\
+Session & Conversation/session signal is preserved & Each turn looks like a fresh unrelated call \\
+Model settings & Model and reasoning effort remain fixed & Cache buckets change between turns \\
+Prompt prefix & Stable rules and tools stay stable & Dynamic bridge text appears before stable context \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
