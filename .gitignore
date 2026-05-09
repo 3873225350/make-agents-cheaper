@@ -5,7 +5,8 @@ __pycache__/
 dist/
 build/
 target/
-runs/
+runs/*
+!runs/AGENTS.md
 .claude-trace/
 *.egg-info/
 *.aux
