@@ -13,6 +13,7 @@ real coding-task suite v1: done
 Claude skill adapter scaffold: done
 checkpoint before next experiment: done
 larger real coding-task suite v2: fixture scaffolded
+trace capture pipeline: documented
 real coding-task pilot: planned
 ```
 
@@ -38,6 +39,7 @@ and can reduce observed input cost without reducing task success.
 | 2 | Build a real coding-task fixture repo | `subtasks/02-fixture-repo.md` | [x] done |
 | 3 | Define realistic task-suite v1 | `subtasks/03-real-coding-task-suite.md` | [x] done |
 | 3a | Define larger real-coding task-suite v2 | `subtasks/09-real-coding-v2-suite.md` | [x] defined |
+| 3b | Add raw trace capture pipeline | `subtasks/10-trace-capture-pipeline.md` | [x] documented |
 | 4 | Run paired A/B pilot on 1-2 tasks | `subtasks/04-pilot-run.md` | [ ] planned |
 | 5 | Scale to a full task matrix | `subtasks/05-scale-evaluation.md` | [ ] planned |
 | 6 | Add analysis and paper-facing tables | `subtasks/06-analysis-and-paper.md` | [ ] planned |
@@ -73,6 +75,7 @@ and can reduce observed input cost without reducing task success.
    - Cache-friendly measured.
    - Control-steady and dynamic-drift slices.
    - Per-run token usage and validation logs.
+   - Capture raw Claude Code request/response logs with `claude-trace` when possible, then normalize them into audit/eval rows.
 4. [ ] Update paper-facing analysis.
    - Clearly state that Codex is the development assistant.
    - State that the current studied harness is Claude Code.

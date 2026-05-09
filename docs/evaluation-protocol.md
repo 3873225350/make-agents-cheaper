@@ -48,6 +48,7 @@ runs/2026-05-09-claude-mimo-cache/
   baseline.jsonl
   cache-friendly.jsonl
   notes.md
+  raw/
   traces/
   requests/
   layers/
@@ -181,6 +182,14 @@ If `mimo-v2.5-pro` or the router does not expose cached token accounting, set:
 and do not claim cost savings from cache hit. You may still report prefix stability and latency as exploratory evidence.
 
 ## Trace Artifacts
+
+When possible, wrap Claude Code with `claude-trace` and keep the raw request/response JSONL under:
+
+```text
+runs/<experiment>/raw/claude-trace/
+```
+
+Raw traces are ignored local evidence. Do not commit them. Normalize them into the artifacts below before analysis.
 
 Save these when available:
 

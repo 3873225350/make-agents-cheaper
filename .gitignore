@@ -6,6 +6,7 @@ dist/
 build/
 target/
 runs/
+.claude-trace/
 *.egg-info/
 *.aux
 *.bbl
