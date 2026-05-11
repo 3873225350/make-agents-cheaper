@@ -19,3 +19,4 @@ runs/*
 paper/main.pdf
 *.synctex.gz
 references/keep-codex-fast/
+yub.yaml

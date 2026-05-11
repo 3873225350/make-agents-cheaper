@@ -99,23 +99,36 @@ Long iterative session & Improve docs across 4--6 turns & Best case for prompt-c
 
 \subsection{Result Table Template}
 
-\cref{tab:results-template} shows the minimum reporting table. A positive result requires cost and latency improvements without a task-success regression.
+\cref{tab:results-template} shows the minimum reporting table. The table is a schema, not a final result table: final values must be regenerated from the experiment JSONL paths. A positive result requires lower uncached input and no task-success regression in the all-runs accounting. Successful-only rows may be reported as diagnostics, but they must not replace the all-runs table.
 
 \begin{table}[h]
 \centering
 \caption{Minimum result schema for comparing baseline and cache-friendly runs.}
 \label{tab:results-template}
 \small
-\begin{tabular}{@{}lrr@{}}
+\begin{tabularx}{\linewidth}{@{}lXX@{}}
 \toprule
 \textbf{Metric} & \textbf{Baseline} & \textbf{Cache-friendly} \\
 \midrule
-Prompt cache hit rate & 18.2\% & 76.9\% \\
-Uncached input tokens & 1.00$\times$ & 0.43$\times$ \\
-Estimated cost & 1.00$\times$ & 0.57$\times$ \\
-Median time to first token & 1.00$\times$ & 0.69$\times$ \\
-Task success & 17/20 & 17/20 \\
-Median turns & 4 & 4 \\
+Prompt cache hit rate & from JSONL & from JSONL \\
+Uncached input tokens & from JSONL & from JSONL, plus ratio to baseline \\
+Estimated cost & optional price-derived value & optional price-derived value \\
+Median time to first token & from JSONL when available & from JSONL when available \\
+Task success, all runs & successes / records & successes / records \\
+Task success, successful-only subset & diagnostic only & diagnostic only \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
+
+\subsection{Report Regeneration}
+
+The repository provides a report generator that turns the same JSONL files used by \texttt{eval} and \texttt{task-report} into paper-facing Markdown tables:
+
+\begin{lstlisting}[language=bash,basicstyle=\ttfamily\small,breaklines=true,frame=single]
+cargo run --quiet -- analysis-report \
+  --baseline runs/<experiment>/baseline.jsonl \
+  --candidate runs/<experiment>/cache-friendly.jsonl \
+  --output runs/<experiment>/analysis-report.md
+\end{lstlisting}
+
+The generated report records the role separation used by the paper: Codex is the development assistant, Claude Code is the studied harness, MiMo is the current backend route/model family, and \toolname\ audit/eval logs are the measurement layer. It also emits quality, cache-accounting, and savings gates so that a lower uncached-token count is not reported as a win when task quality regresses or cache accounting is unavailable.

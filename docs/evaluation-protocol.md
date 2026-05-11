@@ -53,9 +53,36 @@ runs/2026-05-09-claude-mimo-cache/
   requests/
   layers/
   tools/
+  validation/
+  prompts/
+  drift/
 ```
 
 Fill `manifest.json` before running tasks.
+
+For V2 real-coding pilots, generate the run order and command skeleton from the
+task manifest:
+
+```bash
+cargo run --quiet -- pilot-plan \
+  --manifest docs/task-suites/real-coding-ablation-v2.manifest.json \
+  --task docs-token-accounting \
+  --experiment-dir runs/2026-05-09-claude-mimo-real-coding-v2-pilot \
+  --slice dynamic-drift \
+  --repeats 1
+```
+
+This prints the warm-up and measured calls, prompt-file setup, drift probes, and
+validation log paths. It does not execute live Claude Code calls.
+
+For a full V2 matrix, generate all task/slice plans:
+
+```bash
+cargo run --quiet -- matrix-plan \
+  --manifest docs/task-suites/real-coding-ablation-v2.manifest.json \
+  --experiment-dir runs/2026-05-09-claude-mimo-real-coding-v2-full \
+  --repeats 3
+```
 
 ## Fixed Variables
 
@@ -181,15 +208,25 @@ If `mimo-v2.5-pro` or the router does not expose cached token accounting, set:
 
 and do not claim cost savings from cache hit. You may still report prefix stability and latency as exploratory evidence.
 
-## Trace Artifacts
+## Direct JSON Artifacts
 
-When possible, wrap Claude Code with `claude-trace` and keep the raw request/response JSONL under:
+The current roadmap does not require `claude-trace`. Save direct Claude Code JSON output under:
+
+```text
+runs/<experiment>/raw/claude-json/{run_id}.json
+```
+
+Normalize it with `claude-json-import`. These rows can count usage, latency,
+validation, and task success. They should mark request-shape evidence as
+unavailable and must not be used to prove system/tool/message ordering.
+
+Optional raw request capture can still be stored under:
 
 ```text
 runs/<experiment>/raw/claude-trace/
 ```
 
-Raw traces are ignored local evidence. Do not commit them. Normalize them into the artifacts below before analysis.
+Raw traces are ignored local evidence. Do not commit them. If optional trace capture exists, normalize it into the artifacts below before request-shape analysis.
 
 Save these when available:
 
@@ -278,6 +315,15 @@ cargo run --quiet -- task-report \
   --candidate runs/2026-05-09-claude-mimo-cache/cache-friendly.jsonl
 ```
 
+Then generate the paper-facing Markdown summary:
+
+```bash
+cargo run --quiet -- analysis-report \
+  --baseline runs/2026-05-09-claude-mimo-cache/baseline.jsonl \
+  --candidate runs/2026-05-09-claude-mimo-cache/cache-friendly.jsonl \
+  --output runs/2026-05-09-claude-mimo-cache/analysis-report.md
+```
+
 If the route exposes current prices, also run:
 
 ```bash
@@ -297,6 +343,8 @@ Report:
 - output tokens;
 - median TTFT;
 - median total latency;
+- all-runs vs successful-only subsets;
+- quality and cache-accounting gates;
 - task success;
 - validation pass rate;
 - any regressions.

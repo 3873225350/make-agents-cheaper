@@ -1,0 +1,4 @@
+interface:
+  display_name: "Claude JSON Capture"
+  short_description: "Run Claude JSON capture without trace."
+  default_prompt: "Use claude-trace-recovery to skip claude-trace, run direct Claude JSON capture, normalize with claude-json-import, and record evidence limits."

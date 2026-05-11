@@ -16,19 +16,30 @@ cheapcode:
 
 ## Work Items
 
-- Update `SKILL.md` with the standardized ablation workflow.
-- Add command examples for Claude Code and Codex.
-- Add checklist for prompt-cache-friendly config.
-- Add warning about hooks as measurement/guardrails, not primary rewriting.
+- [x] Update `SKILL.md` with the standardized ablation workflow.
+- [x] Add command examples for Claude Code and Codex.
+- [x] Add checklist for prompt-cache-friendly config.
+- [x] Add warning that skills are runbooks and audit/eval logs are the evidence source.
+- [x] Add a Claude adapter reference that links `init-experiment`, `pilot-plan`, `matrix-plan`, `trace-import`, `eval`, `task-report`, and `analysis-report`.
 
 ## Acceptance Criteria
 
-- A user can run the benchmark from the skill instructions.
-- The workflow does not require patching agent source.
-- The workflow records logs and prevents overclaiming.
+- [x] A user can run the benchmark from the skill instructions.
+- [x] The workflow does not require patching agent source.
+- [x] The workflow records logs and prevents overclaiming.
+- [ ] The workflow has been tested by an independent skill-guided agent.
+
+## Updated Files
+
+```text
+SKILL.md
+../make-agents-cheaper-skill/README.md
+../make-agents-cheaper-skill/cheaper-skill-for-claude/SKILL.md
+../make-agents-cheaper-skill/cheaper-skill-for-claude/references/standardized-ablation-workflow.md
+```
 
 ## Status
 
 ```text
-planned
+workflow synchronized; usability ablation still pending
 ```

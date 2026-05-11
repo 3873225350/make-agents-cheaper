@@ -100,22 +100,38 @@ In other words:
 It reduces paid uncached input, not necessarily total input.
 ```
 
+## Pilot Evidence Snapshot
+
+The latest V2 direct-json pilot is intentionally published as mixed/negative evidence, not as a savings claim.
+
+![V2 direct-json pilot chart](docs/figures/v2-direct-json-pilot.svg)
+
+Summary:
+
+- `control-steady`: cache-friendly uncached input was 7,305 vs 8,162 baseline (0.895x), with 3/3 task success on both sides.
+- `dynamic-drift`: cache-friendly uncached input was 13,930 vs 6,470 baseline (2.153x), with 3/3 task success on both sides.
+- Aggregate: cache-friendly uncached input was 21,235 vs 14,632 baseline (1.451x).
+
+So the current V2 pilot does **not** support the primary savings claim. The useful result is methodological: the toolchain preserves the evidence, separates slices, and prevents overclaiming before a larger matrix is run.
+
+See `docs/v2-direct-json-pilot.md` and `docs/data/v2-direct-json-pilot-summary.csv` for the derived, commit-safe data. Raw run logs stay ignored under `runs/`.
+
 ## Feature 1: Codex Cache-Hit Audit
 
-XAI Router improves cache hits in the routing layer. This repository focuses on the missing client-side step:
+Cache-aware routers can improve cache hits in the routing layer. This repository focuses on the missing client-side step:
 
 > Before blaming the router or model, verify that your local Codex config is actually cache-hit friendly.
 
 The bundled Rust CLI is read-only by default. It inspects a Codex `config.toml` and reports:
 
-- whether the configured provider points at `https://api.xairouter.com`
+- whether the configured provider has a stable `base_url`
 - whether `wire_api = "responses"` is set
 - whether WebSocket mode is enabled when you expect long sessions
 - whether `env_key` is configured and present in the current shell
 - whether model and reasoning settings are stable enough for repeat sessions
 - whether the config looks likely to drift between providers or transport modes
 
-It also prints copy-ready HTTP and WebSocket configuration templates.
+It also prints HTTP and WebSocket configuration templates with placeholder router settings. Set `MAKE_AGENTS_CHEAPER_EXPECTED_BASE_URL` when you want the audit to verify a private endpoint without putting that endpoint in source control.
 
 ## Quick Start
 
@@ -191,6 +207,50 @@ Print per-task token usage:
 cargo run --quiet -- task-report --baseline baseline.jsonl --candidate cache-friendly.jsonl
 ```
 
+Write paper-facing Markdown tables and interpretation guardrails:
+
+```bash
+cargo run --quiet -- analysis-report \
+  --baseline baseline.jsonl \
+  --candidate cache-friendly.jsonl \
+  --output runs/exp/analysis-report.md
+```
+
+Normalize direct Claude Code JSON output into the eval schema:
+
+```bash
+cargo run --quiet -- claude-json-import \
+  --input runs/exp/raw/claude-json/run-1.json \
+  --run-id run-1 \
+  --task-id docs-token-accounting \
+  --condition cache-friendly \
+  --slice dynamic-drift \
+  --repeat-id 1 \
+  --phase measured \
+  --output runs/exp/cache-friendly.jsonl \
+  --validation-path runs/exp/validation/run-1.txt \
+  --validation-passed true
+```
+
+Optional: if a raw `claude-trace` JSONL file exists, normalize it into the eval schema and request/layer/tool artifacts:
+
+```bash
+cargo run --quiet -- trace-import \
+  --input runs/exp/raw/claude-trace/run-1.jsonl \
+  --run-id run-1 \
+  --task-id docs-token-accounting \
+  --condition baseline \
+  --slice dynamic-drift \
+  --repeat-id 1 \
+  --phase measured \
+  --output runs/exp/baseline.jsonl \
+  --artifacts-dir runs/exp \
+  --validation-path runs/exp/validation/run-1.txt \
+  --validation-passed true
+```
+
+The current roadmap uses direct Claude JSON as the default evidence path. It preserves usage/cost/validation accounting, but it cannot prove request-shape facts such as system/tool/message ordering.
+
 Compare with provider prices, expressed as USD per million tokens:
 
 ```bash
@@ -216,6 +276,26 @@ Initialize a reproducible experiment log directory:
 cargo run --quiet -- init-experiment --dir runs/2026-05-09-claude-mimo-cache
 ```
 
+Generate a paired pilot command plan from the V2 task manifest:
+
+```bash
+cargo run --quiet -- pilot-plan \
+  --manifest docs/task-suites/real-coding-ablation-v2.manifest.json \
+  --task docs-token-accounting \
+  --experiment-dir runs/2026-05-09-claude-mimo-real-coding-v2-pilot \
+  --slice dynamic-drift \
+  --repeats 1
+```
+
+Generate the full task-matrix command plan:
+
+```bash
+cargo run --quiet -- matrix-plan \
+  --manifest docs/task-suites/real-coding-ablation-v2.manifest.json \
+  --experiment-dir runs/2026-05-09-claude-mimo-real-coding-v2-full \
+  --repeats 3
+```
+
 Full protocol: `docs/evaluation-protocol.md`.
 
 ## Recommended Codex WebSocket Config
@@ -223,7 +303,7 @@ Full protocol: `docs/evaluation-protocol.md`.
 Use this when you want stronger long-session continuity:
 
 ```toml
-model_provider = "xai"
+model_provider = "cache_router"
 model = "gpt-5.4"
 model_reasoning_effort = "xhigh"
 plan_mode_reasoning_effort = "xhigh"
@@ -233,12 +313,12 @@ approval_policy = "never"
 sandbox_mode = "danger-full-access"
 suppress_unstable_features_warning = true
 
-[model_providers.xai]
+[model_providers.cache_router]
 name = "OpenAI"
-base_url = "https://api.xairouter.com"
+base_url = "https://router.example/v1"
 wire_api = "responses"
 requires_openai_auth = false
-env_key = "XAI_API_KEY"
+env_key = "CACHE_ROUTER_API_KEY"
 supports_websockets = true
 
 [features]
@@ -250,7 +330,7 @@ responses_websockets_v2 = true
 Use this when you prefer a simpler, broadly compatible setup:
 
 ```toml
-model_provider = "xai"
+model_provider = "cache_router"
 model = "gpt-5.4"
 model_reasoning_effort = "xhigh"
 plan_mode_reasoning_effort = "xhigh"
@@ -259,12 +339,12 @@ model_verbosity = "medium"
 approval_policy = "never"
 sandbox_mode = "danger-full-access"
 
-[model_providers.xai]
+[model_providers.cache_router]
 name = "OpenAI"
-base_url = "https://api.xairouter.com"
+base_url = "https://router.example/v1"
 wire_api = "responses"
 requires_openai_auth = false
-env_key = "XAI_API_KEY"
+env_key = "CACHE_ROUTER_API_KEY"
 ```
 
 ## Cheapness Checklist
@@ -289,7 +369,7 @@ env_key = "XAI_API_KEY"
 
 ## Roadmap
 
-- **Phase 1:** Codex config audit and XAI Router-friendly templates.
+- **Phase 1:** Codex config audit and cache-aware router-friendly templates.
 - **Phase 2:** prefix fingerprinting, tool-schema drift checks, breakpoint analysis, benchmark comparison, and cache-aware compact templates.
 - **Phase 3:** package reusable agent skills for Codex-first workflows, then Claude Code and Cursor cache-friendliness checks where reliable local signals exist.
 - **Phase 4:** router and multi-agent workflow diagnostics.
@@ -304,6 +384,7 @@ env_key = "XAI_API_KEY"
 - Real coding-task suite: `docs/task-suites/real-coding-ablation-v1.md`
 - Phenomena analysis log: `docs/phenomena-analysis.md`
 - MiMo token accounting note: `docs/mimo-token-accounting.md`
+- V2 direct-json pilot snapshot: `docs/v2-direct-json-pilot.md`
 - Long-term task plan: `taskplan/roadmap.md`
 
 The evaluation goal is not to show fewer total tokens. It is to show:

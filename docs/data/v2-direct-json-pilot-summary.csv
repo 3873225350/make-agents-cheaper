@@ -1,0 +1,5 @@
+slice,condition,records,cache_hit_pct,uncached_input,observed_cost_usd,task_success
+control-steady,baseline,3,97.79,8162,0.271577,3/3
+control-steady,cache-friendly,3,97.85,7305,0.250883,3/3
+dynamic-drift,baseline,3,98.39,6470,0.290073,3/3
+dynamic-drift,cache-friendly,3,97.88,13930,0.477192,3/3

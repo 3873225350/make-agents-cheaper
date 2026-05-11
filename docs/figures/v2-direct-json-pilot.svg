@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-labelledby="title desc">
+  <title id="title">V2 direct JSON pilot results</title>
+  <desc id="desc">Grouped horizontal bars comparing baseline and cache-friendly uncached input tokens and observed cost for control-steady and dynamic-drift slices.</desc>
+  <rect width="960" height="560" fill="#ffffff"/>
+  <text x="48" y="48" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="28" font-weight="700" fill="#17202a">V2 Direct-JSON Pilot: Mixed Evidence</text>
+  <text x="48" y="78" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="15" fill="#52616b">Claude Code harness, MiMo route, docs-token-accounting, 3 repeats per condition/slice. All imported measured rows passed validation.</text>
+
+  <rect x="48" y="105" width="864" height="1" fill="#d8dee5"/>
+
+  <circle cx="62" cy="134" r="6" fill="#4f6d7a"/>
+  <text x="78" y="139" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" fill="#29343d">baseline</text>
+  <circle cx="162" cy="134" r="6" fill="#e76f51"/>
+  <text x="178" y="139" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" fill="#29343d">cache-friendly</text>
+
+  <text x="48" y="178" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" fill="#17202a">Uncached input tokens</text>
+  <text x="48" y="201" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#52616b">lower is better; warm-ups excluded</text>
+
+  <text x="48" y="242" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#29343d">control-steady</text>
+  <rect x="180" y="224" width="175" height="18" rx="4" fill="#4f6d7a"/>
+  <text x="366" y="238" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">8,162</text>
+  <rect x="180" y="250" width="157" height="18" rx="4" fill="#e76f51"/>
+  <text x="348" y="264" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">7,305  (0.895x)</text>
+
+  <text x="48" y="310" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#29343d">dynamic-drift</text>
+  <rect x="180" y="292" width="139" height="18" rx="4" fill="#4f6d7a"/>
+  <text x="330" y="306" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">6,470</text>
+  <rect x="180" y="318" width="299" height="18" rx="4" fill="#e76f51"/>
+  <text x="490" y="332" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">13,930  (2.153x)</text>
+
+  <text x="524" y="178" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="19" font-weight="700" fill="#17202a">Observed cost</text>
+  <text x="524" y="201" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#52616b">USD reported by direct Claude JSON</text>
+
+  <text x="524" y="242" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#29343d">control-steady</text>
+  <rect x="656" y="224" width="170" height="18" rx="4" fill="#4f6d7a"/>
+  <text x="837" y="238" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">$0.2716</text>
+  <rect x="656" y="250" width="157" height="18" rx="4" fill="#e76f51"/>
+  <text x="824" y="264" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">$0.2509</text>
+
+  <text x="524" y="310" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" font-weight="700" fill="#29343d">dynamic-drift</text>
+  <rect x="656" y="292" width="181" height="18" rx="4" fill="#4f6d7a"/>
+  <text x="848" y="306" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">$0.2901</text>
+  <rect x="656" y="318" width="298" height="18" rx="4" fill="#e76f51"/>
+  <text x="802" y="362" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="13" fill="#29343d">$0.4772</text>
+  <line x1="954" y1="327" x2="826" y2="354" stroke="#e76f51" stroke-width="1.5"/>
+
+  <rect x="48" y="392" width="864" height="92" rx="8" fill="#f5f7fa" stroke="#d8dee5"/>
+  <text x="72" y="426" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="16" font-weight="700" fill="#17202a">Interpretation guardrail</text>
+  <text x="72" y="454" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" fill="#29343d">Control-steady improved slightly, but dynamic-drift regressed. The aggregate candidate uncached input was 1.451x baseline.</text>
+  <text x="72" y="476" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="14" fill="#29343d">Do not claim V2 pilot savings; diagnose the dynamic-drift regression before spending a full matrix.</text>
+
+  <text x="48" y="526" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="12" fill="#697782">Source: docs/data/v2-direct-json-pilot-summary.csv; derived from ignored local run logs, not raw traces.</text>
+</svg>

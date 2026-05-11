@@ -23,7 +23,7 @@ docs/task-suites/real-coding-ablation-v2.md
 ## Status
 
 ```text
-fixture scaffolded
+dataset manifest added
 ```
 
 ## Local Fixture
@@ -43,3 +43,19 @@ bash task-validate.sh base
 ```
 
 The task-specific validations are intentionally stricter than the baseline. They are expected to fail until an agent completes the corresponding task.
+
+## Dataset Manifest
+
+The tracked manifest fixes task prompts and runner metadata:
+
+```text
+docs/task-suites/real-coding-ablation-v2.manifest.json
+```
+
+It records:
+
+- baseline and cache-friendly conditions;
+- control-steady and dynamic-drift slices;
+- required per-run JSONL fields;
+- exact prompt turns for all eight tasks;
+- validation command and expected files for every task.

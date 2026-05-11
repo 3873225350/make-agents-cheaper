@@ -1,70 +1,51 @@
-# Trace Capture Pipeline
+# Direct JSON Capture Pipeline
 
-This document describes where `claude-trace` fits in the `make-agents-cheaper` evaluation pipeline.
+This document describes the current evidence-capture path for the `make-agents-cheaper` evaluation pipeline.
 
-## Role
+## Current Decision
 
-`claude-trace` is a raw request/response capture layer. It wraps Claude Code with a Node preloader, intercepts `fetch` / HTTP calls, and writes request-response pairs to `.claude-trace/*.jsonl`.
+The roadmap no longer depends on `claude-trace`.
 
-In this project, use it as raw evidence for:
+Use direct Claude Code JSON as the default capture layer:
 
-- actual `system`, `tools`, and `messages` order;
-- `cache_control` breakpoint placement;
-- streaming or non-streaming response usage fields;
-- whether `--exclude-dynamic-system-prompt-sections` changes the request shape;
-- whether baseline and candidate runs really kept model/provider/tool settings stable.
+```text
+Claude Code --output-format json
+  -> raw/claude-json/<run_id>.json
+  -> claude-json-import
+  -> baseline.jsonl or cache-friendly.jsonl
+  -> eval / task-report / analysis-report
+```
 
-It is not the main eval format. The main eval format remains `baseline.jsonl` and `cache-friendly.jsonl` produced for `make-agents-cheaper eval`.
+This supports the current mainline experiment because Claude Code JSON exposes usage, cost, latency, validation, and task-success evidence. It does not expose raw API request shape, so do not use direct JSON rows to prove exact `system`, `tools`, or `messages` ordering.
 
 ## Storage Layout
 
-Raw captured logs stay under ignored experiment directories:
+Raw direct JSON logs stay under ignored experiment directories:
 
 ```text
 runs/<experiment>/
   raw/
-    claude-trace/
-      <run_id>.jsonl
-      <run_id>.html
-  requests/
-    <run_id>.request.json
-  traces/
-    <run_id>.response.json
-  layers/
-    <run_id>.layers.json
-  tools/
-    <run_id>.tools.json
+    claude-json/
+      <run_id>.json
+      <run_id>.stderr.txt
+  validation/
+    <run_id>.txt
   baseline.jsonl
   cache-friendly.jsonl
   notes.md
 ```
 
-Do not commit raw `.claude-trace` logs. They may contain system prompts, tool outputs, file contents, local paths, and user text.
-
-## Pipeline Position
-
-For every measured Claude Code run:
+Optional trace artifacts, if someone explicitly captures them later, may still use:
 
 ```text
-task reset
-optional dynamic drift
-claude-trace-wrapped Claude Code call
-save raw claude-trace JSONL
-extract request/body artifacts
-run breakpoint/fingerprint/tool-schema checks
-run task validation
-append one normalized eval row
+runs/<experiment>/raw/claude-trace/
+runs/<experiment>/requests/
+runs/<experiment>/traces/
+runs/<experiment>/layers/
+runs/<experiment>/tools/
 ```
 
-This creates two evidence layers:
-
-```text
-raw evidence:
-  request/response pairs captured by claude-trace
-
-normalized evidence:
-  make-agents-cheaper JSONL rows and derived request/layer/tool artifacts
-```
+Do not commit raw logs. They may contain system prompts, tool outputs, file contents, local paths, and user text.
 
 ## Command Shape
 
@@ -74,12 +55,14 @@ Baseline example:
 cd runs/fixtures/real-coding-v2
 bash task-reset.sh docs-token-accounting
 
-CLAUDE_TRACE_API_ENDPOINT="${CLAUDE_TRACE_API_ENDPOINT:-api.anthropic.com}" \
-claude-trace --include-all-requests --run-with -p \
+claude -p \
   --model mimo-v2.5-pro \
   --output-format json \
   --no-session-persistence \
-  "$PROMPT"
+  --permission-mode bypassPermissions \
+  "$PROMPT" \
+  > runs/<experiment>/raw/claude-json/<run_id>.json \
+  2> runs/<experiment>/raw/claude-json/<run_id>.stderr.txt
 ```
 
 Cache-friendly example:
@@ -88,54 +71,78 @@ Cache-friendly example:
 cd runs/fixtures/real-coding-v2
 bash task-reset.sh docs-token-accounting
 
-CLAUDE_TRACE_API_ENDPOINT="${CLAUDE_TRACE_API_ENDPOINT:-api.anthropic.com}" \
-claude-trace --include-all-requests --run-with -p \
+claude -p \
   --model mimo-v2.5-pro \
   --output-format json \
   --no-session-persistence \
+  --permission-mode bypassPermissions \
   --exclude-dynamic-system-prompt-sections \
-  "$PROMPT"
+  "$PROMPT" \
+  > runs/<experiment>/raw/claude-json/<run_id>.json \
+  2> runs/<experiment>/raw/claude-json/<run_id>.stderr.txt
 ```
 
-After each run, move the generated `.claude-trace/log-*.jsonl` and `.html` into the experiment directory:
+`--permission-mode bypassPermissions` is for ignored fixture experiments only. Do not generalize it to ordinary repo editing without an explicit safety decision.
+
+## Normalization
+
+Normalize measured baseline runs:
 
 ```bash
-mkdir -p runs/<experiment>/raw/claude-trace
-mv .claude-trace/log-*.jsonl runs/<experiment>/raw/claude-trace/<run_id>.jsonl
-mv .claude-trace/log-*.html runs/<experiment>/raw/claude-trace/<run_id>.html
+cargo run --quiet -- claude-json-import \
+  --input runs/<experiment>/raw/claude-json/<run_id>.json \
+  --run-id <run_id> \
+  --task-id docs-token-accounting \
+  --condition baseline \
+  --slice control-steady \
+  --repeat-id 1 \
+  --phase measured \
+  --output runs/<experiment>/baseline.jsonl \
+  --validation-path runs/<experiment>/validation/<run_id>.txt \
+  --validation-passed <true|false> \
+  --task-success <true|false>
 ```
 
-## Extraction Targets
-
-A future `make-agents-cheaper trace-import` command should convert raw pairs into:
-
-```text
-requests/<run_id>.request.json
-traces/<run_id>.response.json
-layers/<run_id>.layers.json
-tools/<run_id>.tools.json
-baseline.jsonl or cache-friendly.jsonl
-```
+Use `--condition cache-friendly` and `--output runs/<experiment>/cache-friendly.jsonl` for candidate runs.
 
 Minimum extraction rules:
 
-- choose `/v1/messages` request-response pairs;
-- keep the final pair for the run unless the run intentionally has multiple turns;
-- parse SSE `body_raw` if response is streaming;
-- extract request body `system`, `tools`, `messages`, and `model`;
-- extract usage tokens from response body or reconstructed SSE;
-- compute `uncached_input_tokens = input_tokens - cached_input_tokens` when safe;
-- preserve `cache_creation_input_tokens` when present;
+- extract usage from Claude Code `modelUsage` when present;
+- preserve `cacheReadInputTokens`, `cacheCreationInputTokens`, `inputTokens`, `outputTokens`, and `costUSD`;
+- compute `uncached_input_tokens = input_tokens - cached_input_tokens` safely;
+- preserve latency fields such as `duration_ms` and `duration_api_ms`;
+- set `request_shape_observable=false`;
 - mark `cache_accounting_observable=false` if usage fields are missing.
+
+## Optional Trace Path
+
+`trace-import` remains available as an optional higher-evidence path if raw request capture exists. It is not required for the current roadmap run.
+
+Optional trace rows can support request-shape checks:
+
+```bash
+cargo run --quiet -- trace-import \
+  --input runs/<experiment>/raw/claude-trace/<run_id>.jsonl \
+  --run-id <run_id> \
+  --task-id docs-token-accounting \
+  --condition baseline \
+  --slice dynamic-drift \
+  --repeat-id 1 \
+  --phase measured \
+  --output runs/<experiment>/baseline.jsonl \
+  --artifacts-dir runs/<experiment> \
+  --validation-path runs/<experiment>/validation/<run_id>.txt \
+  --validation-passed true
+```
 
 ## Safety Rules
 
-- Never commit raw trace files.
+- Never commit raw JSON or trace files.
 - Never paste full raw request bodies into reports.
 - Sanitize local paths, API headers, auth material, file contents, and user text before sharing.
-- Prefer hash/fingerprint summaries for prompt layers.
-- Store paper-facing excerpts as minimal derived facts, not raw payload dumps.
+- Prefer hash/fingerprint summaries for prompt layers when optional request artifacts exist.
+- Record failed or anomalous direct JSON runs instead of replacing them.
 
 ## Why This Matters
 
-Session JSONL logs are useful for token/session summaries, but raw API traces are better for proving request-shape claims. The cache-hit claim depends on the shape of the prompt prefix, so the pipeline needs access to the actual API request body whenever possible.
+The primary experiment needs reliable usage/cost/validation rows first. Direct Claude JSON is enough for that. Request-shape evidence is stronger, but it is no longer a blocker for executing the V2 matrix.

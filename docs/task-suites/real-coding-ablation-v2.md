@@ -27,6 +27,16 @@ runs/fixtures/real-coding-v2/
 
 The fixture remains ignored by git because `runs/` is an experiment/log area.
 
+Machine-readable task manifest:
+
+```text
+docs/task-suites/real-coding-ablation-v2.manifest.json
+```
+
+The manifest is the canonical source for automated runners. It fixes the
+conditions, drift slices, per-run fields, validation command, expected files,
+and exact prompt turns for every task.
+
 The fixture should be resettable:
 
 ```bash
@@ -299,6 +309,7 @@ The suite is ready for measurement when:
 
 - every task has reset and validation commands;
 - every task has a fixed prompt;
+- the machine-readable manifest parses and names every task in the matrix;
 - every task can run under both baseline and cache-friendly conditions;
 - dynamic drift files are cleaned by reset;
 - validation catches at least one meaningful failure per implementation task;

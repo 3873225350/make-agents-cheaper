@@ -7,7 +7,7 @@
 
 The first release checks five invariants:
 \begin{enumerate}[leftmargin=2em]
-    \item \textbf{Provider stability.} The active provider should point to the intended cache-aware route, such as \texttt{https://api.xairouter.com}.
+    \item \textbf{Provider stability.} The active provider should point to the intended cache-aware route, supplied outside the source tree when exact endpoint verification is required.
     \item \textbf{Responses transport.} Codex-style workflows should use \texttt{wire\_api = "responses"} rather than compatibility paths that may rewrite request bodies.
     \item \textbf{Session continuity.} WebSocket support and feature flags should be enabled together when the user wants long-session continuity.
     \item \textbf{Credential readiness.} The configured \texttt{env\_key} should exist in the current shell, but its value must never be printed.
@@ -39,4 +39,3 @@ Prompt prefix & Stable rules and tools stay stable & Dynamic bridge text appears
 \bottomrule
 \end{tabularx}
 \end{table}
-

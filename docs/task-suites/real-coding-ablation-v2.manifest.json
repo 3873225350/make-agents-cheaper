@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "suite_id": "real-coding-ablation-v2",
+  "suite_name": "Real Coding Ablation V2",
+  "purpose": "Small realistic coding-task dataset for paired Claude Code + MiMo cache-hit experiments.",
+  "object_of_study": {
+    "development_assistant": "Codex",
+    "studied_harness": "Claude Code",
+    "backend_route_model": "MiMo, e.g. mimo-v2.5-pro",
+    "measurement_layer": "make-agents-cheaper audit/eval",
+    "reuse_layer": "cheaper-skill-for-claude"
+  },
+  "fixture": {
+    "path": "runs/fixtures/real-coding-v2",
+    "reset_command": "bash task-reset.sh <task-id>",
+    "validation_command": "bash task-validate.sh <task-id>"
+  },
+  "conditions": [
+    {
+      "id": "baseline",
+      "claude_flags": []
+    },
+    {
+      "id": "cache-friendly",
+      "claude_flags": [
+        "--exclude-dynamic-system-prompt-sections"
+      ]
+    }
+  ],
+  "slices": [
+    {
+      "id": "control-steady",
+      "drift_actions": []
+    },
+    {
+      "id": "dynamic-drift",
+      "drift_actions": [
+        "printf 'drift %s\\n' \"$(date +%s%N)\" > .cache-drift-probe",
+        "git status --short > .local-git-status-snapshot",
+        "mkdir -p .local-memory && printf '%s\\n' \"$PWD\" > .local-memory/path.txt"
+      ]
+    }
+  ],
+  "run_shape": [
+    "baseline warm-up",
+    "cache-friendly warm-up",
+    "baseline measured",
+    "cache-friendly measured",
+    "validation for both measured runs",
+    "JSONL extraction",
+    "task-report and eval summary"
+  ],
+  "minimum_measured_repeats": 3,
+  "required_per_run_fields": [
+    "task_id",
+    "condition",
+    "slice",
+    "repeat_id",
+    "phase",
+    "agent",
+    "model",
+    "input_tokens",
+    "cached_input_tokens",
+    "cache_creation_input_tokens",
+    "uncached_input_tokens",
+    "output_tokens",
+    "validation_passed",
+    "task_success",
+    "cache_accounting_observable",
+    "trace_path",
+    "validation_path",
+    "anomaly"
+  ],
+  "tasks": [
+    {
+      "id": "docs-token-accounting",
+      "family": "documentation edit",
+      "turns": 1,
+      "expected_files": [
+        "README.md"
+      ],
+      "validation": "bash task-validate.sh docs-token-accounting",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: add a \"Token Accounting\" section to README.md.\n\nRequirements:\n- Explain input, cached input, cache creation input, uncached input, and output tokens.\n- State that the main target is lower uncached input, not lower total input.\n- Mention that validation failure invalidates a cost win.\n- Keep the change documentation-only.\n\nRun:\nbash task-validate.sh docs-token-accounting"
+      ]
+    },
+    {
+      "id": "cli-jsonl-report",
+      "family": "CLI feature",
+      "turns": 1,
+      "expected_files": [
+        "src/main.rs",
+        "tests/cli.rs"
+      ],
+      "validation": "bash task-validate.sh cli-jsonl-report",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: add a report-jsonl command that reads a JSONL run log and prints one compact table row per task.\n\nExpected command:\ncargo run --quiet -- report-jsonl examples/runs.jsonl\n\nRequired output fields:\n- task_id\n- condition\n- input_tokens\n- cached_input_tokens\n- uncached_input_tokens\n- output_tokens\n- validation_passed\n\nKeep existing commands working.\n\nRun:\nbash task-validate.sh cli-jsonl-report"
+      ]
+    },
+    {
+      "id": "parser-comment-whitespace",
+      "family": "parser bug fix",
+      "turns": 1,
+      "expected_files": [
+        "src/main.rs",
+        "tests/cli.rs"
+      ],
+      "validation": "bash task-validate.sh parser-comment-whitespace",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: make the CSV parser ignore blank lines and comment lines.\n\nComment lines begin with # after optional leading whitespace.\n\nRun:\nbash task-validate.sh parser-comment-whitespace"
+      ]
+    },
+    {
+      "id": "schema-cache-creation",
+      "family": "schema update",
+      "turns": 1,
+      "expected_files": [
+        "src/main.rs",
+        "tests/cli.rs",
+        "README.md"
+      ],
+      "validation": "bash task-validate.sh schema-cache-creation",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: add cache_creation_input_tokens to the run summary schema.\n\nRequirements:\n- Parse the field from JSONL when present.\n- Treat missing cache_creation_input_tokens as 0.\n- Include it in text output.\n- Update README.md with the new field.\n\nRun:\nbash task-validate.sh schema-cache-creation"
+      ]
+    },
+    {
+      "id": "config-warning-rule",
+      "family": "audit rule",
+      "turns": 1,
+      "expected_files": [
+        "src/main.rs",
+        "tests/cli.rs"
+      ],
+      "validation": "bash task-validate.sh config-warning-rule",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: add an audit warning when the config changes model between baseline and candidate.\n\nRequirements:\n- Detect mismatched model names in a small comparison input.\n- Print a warning containing \"model drift\".\n- Add or update a test.\n\nRun:\nbash task-validate.sh config-warning-rule"
+      ]
+    },
+    {
+      "id": "experiment-log-summary",
+      "family": "multi-file feature",
+      "turns": 1,
+      "expected_files": [
+        "src/main.rs",
+        "tests/cli.rs",
+        "examples/runs.jsonl"
+      ],
+      "validation": "bash task-validate.sh experiment-log-summary",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: add an experiment-summary command that aggregates a JSONL log by condition.\n\nRequired aggregate fields:\n- runs\n- validation_passed\n- total_input_tokens\n- total_cached_input_tokens\n- total_uncached_input_tokens\n- total_output_tokens\n- mean_cache_hit_rate\n\nRun:\nbash task-validate.sh experiment-log-summary"
+      ]
+    },
+    {
+      "id": "failing-test-repair",
+      "family": "failing-test repair",
+      "turns": 1,
+      "expected_files": [
+        "src/main.rs"
+      ],
+      "validation": "bash task-validate.sh failing-test-repair",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: one test is failing because uncached_input_tokens is computed incorrectly when cached tokens exceed total input due to malformed data.\n\nExpected behavior:\n- never underflow\n- clamp uncached_input_tokens to 0 for malformed rows\n- keep a warning count for malformed rows\n\nRun:\nbash task-validate.sh failing-test-repair"
+      ]
+    },
+    {
+      "id": "multi-turn-eval-polish",
+      "family": "iterative improvement",
+      "turns": 4,
+      "expected_files": [
+        "README.md",
+        "src/main.rs",
+        "tests/cli.rs"
+      ],
+      "validation": "bash task-validate.sh multi-turn-eval-polish",
+      "prompt_turns": [
+        "You are editing the fixture repository at runs/fixtures/real-coding-v2.\n\nTask: inspect the current CLI and propose the smallest implementation plan for adding a cache-hit evaluation summary.\n\nDo not edit files yet. Reply with the plan only.",
+        "Implement the smallest useful version of the plan.\n\nRun:\nbash task-validate.sh multi-turn-eval-polish",
+        "Improve the README so a user can run the new evaluation summary command with examples/runs.jsonl.\n\nRun:\nbash task-validate.sh multi-turn-eval-polish",
+        "Review your own changes for unrelated edits, then run:\nbash task-validate.sh multi-turn-eval-polish"
+      ]
+    }
+  ]
+}

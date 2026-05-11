@@ -39,4 +39,4 @@ Here, ``prompt'' refers to the full harness payload, not only the user's natural
 
 \subsection{Codex-First Scope}
 
-The first supported target is \codex. A cache-friendly Codex setup should keep the provider, model, reasoning effort, and transport stable within a task. For XAI Router-style deployments, a local audit can verify that \texttt{base\_url} points to the intended router, \texttt{wire\_api = "responses"} is configured, WebSocket mode is consistently enabled when desired, and the configured \texttt{env\_key} exists in the current shell.
+The first supported target is \codex. A cache-friendly Codex setup should keep the provider, model, reasoning effort, and transport stable within a task. For cache-aware router deployments, a local audit can verify that \texttt{base\_url} is configured and stable, \texttt{wire\_api = "responses"} is configured, WebSocket mode is consistently enabled when desired, and the configured \texttt{env\_key} exists in the current shell.
