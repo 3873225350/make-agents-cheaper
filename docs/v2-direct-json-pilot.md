@@ -1,4 +1,4 @@
-# V2 Direct-JSON Pilot Snapshot
+# V2 Direct-JSON Regression Snapshot
 
 This snapshot is a safe, derived summary of the local experiment:
 
@@ -9,6 +9,8 @@ runs/2026-05-11-claude-mimo-direct-json-v2-pilot/
 Raw run logs remain ignored under `runs/`. The tracked data here is limited to aggregate counters needed to explain the result.
 
 ![V2 direct-json pilot chart](figures/v2-direct-json-pilot.svg)
+
+This is no longer the headline result. It is retained as regression evidence because it exposed a behavioral outlier and fixture Git-isolation leakage. The fixed 3-repeat diagnostic is documented in [`v2-prefix-fixed-diagnostic.md`](v2-prefix-fixed-diagnostic.md).
 
 | Slice | Condition | Records | Cache hit | Uncached input | Observed cost | Task success |
 | --- | --- | ---: | ---: | ---: | ---: | ---: |

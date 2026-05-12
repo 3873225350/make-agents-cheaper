@@ -4,6 +4,7 @@ use std::env;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command as ProcessCommand;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value as JsonValue};
@@ -163,6 +164,10 @@ enum Command {
         candidate: PathBuf,
         output: Option<PathBuf>,
     },
+    EvidenceDiff {
+        input: PathBuf,
+        output: Option<PathBuf>,
+    },
     InitExperiment {
         dir: PathBuf,
     },
@@ -172,6 +177,14 @@ enum Command {
         experiment_dir: PathBuf,
         slice: Option<String>,
         repeats: u64,
+    },
+    RunPilot {
+        manifest: PathBuf,
+        task: String,
+        experiment_dir: PathBuf,
+        slice: Option<String>,
+        repeats: u64,
+        execute: bool,
     },
     MatrixPlan {
         manifest: PathBuf,
@@ -283,6 +296,9 @@ fn main() {
             output,
         } => run_analysis_report(&baseline, &candidate, output.as_deref())
             .unwrap_or_else(print_error),
+        Command::EvidenceDiff { input, output } => {
+            run_evidence_diff(&input, output.as_deref()).unwrap_or_else(print_error)
+        }
         Command::InitExperiment { dir } => run_init_experiment(&dir).unwrap_or_else(print_error),
         Command::PilotPlan {
             manifest,
@@ -292,6 +308,22 @@ fn main() {
             repeats,
         } => run_pilot_plan(&manifest, &task, &experiment_dir, slice.as_deref(), repeats)
             .unwrap_or_else(print_error),
+        Command::RunPilot {
+            manifest,
+            task,
+            experiment_dir,
+            slice,
+            repeats,
+            execute,
+        } => run_pilot(
+            &manifest,
+            &task,
+            &experiment_dir,
+            slice.as_deref(),
+            repeats,
+            execute,
+        )
+        .unwrap_or_else(print_error),
         Command::MatrixPlan {
             manifest,
             experiment_dir,
@@ -337,9 +369,12 @@ Usage:
   make-agents-cheaper task-report --baseline baseline.jsonl --candidate cache-friendly.jsonl
   make-agents-cheaper analysis-report --baseline baseline.jsonl --candidate cache-friendly.jsonl \
     [--output report.md]
+  make-agents-cheaper evidence-diff --input session.jsonl [--output code-changes.json]
   make-agents-cheaper init-experiment --dir runs/exp-name
   make-agents-cheaper pilot-plan --manifest suite.json --task TASK_ID --experiment-dir runs/exp-name \
     [--slice SLICE_ID] [--repeats N]
+  make-agents-cheaper run-pilot --manifest suite.json --task TASK_ID --experiment-dir runs/exp-name \
+    [--slice SLICE_ID] [--repeats N] [--execute true|false]
   make-agents-cheaper matrix-plan --manifest suite.json --experiment-dir runs/exp-name \
     [--tasks task-a,task-b] [--repeats N]
   make-agents-cheaper compact-template
@@ -353,9 +388,11 @@ Commands:
   claude-json-import Normalize Claude Code --output-format json into eval JSONL
   eval              Compare baseline vs cache-friendly JSONL runs
   task-report       Print per-task token usage from JSONL runs
-  analysis-report   Write paper-facing aggregate and per-task Markdown tables
+  analysis-report   Write paper-facing aggregate, per-slice, and per-task Markdown tables
+  evidence-diff     Extract tool-claimed code changes from session JSONL/JSON
   init-experiment   Create a reproducible experiment log directory
   pilot-plan        Print a ready-to-run paired pilot command plan from a task manifest
+  run-pilot         Write a bounded pilot shell script, optionally execute it
   matrix-plan       Print full-matrix pilot-plan commands and expected run counts
   compact-template  Print a stable-first reactivation template
 
@@ -441,6 +478,10 @@ where
             candidate: required_path(&args[1..], "--candidate")?,
             output: option_path(&args[1..], "--output")?,
         }),
+        "evidence-diff" => Ok(Command::EvidenceDiff {
+            input: required_path(&args[1..], "--input")?,
+            output: option_path(&args[1..], "--output")?,
+        }),
         "init-experiment" => Ok(Command::InitExperiment {
             dir: required_path(&args[1..], "--dir")?,
         }),
@@ -450,6 +491,14 @@ where
             experiment_dir: required_path(&args[1..], "--experiment-dir")?,
             slice: option_string(&args[1..], "--slice")?,
             repeats: option_u64(&args[1..], "--repeats")?.unwrap_or(1),
+        }),
+        "run-pilot" => Ok(Command::RunPilot {
+            manifest: required_path(&args[1..], "--manifest")?,
+            task: required_string(&args[1..], "--task")?,
+            experiment_dir: required_path(&args[1..], "--experiment-dir")?,
+            slice: option_string(&args[1..], "--slice")?,
+            repeats: option_u64(&args[1..], "--repeats")?.unwrap_or(1),
+            execute: option_bool(&args[1..], "--execute")?.unwrap_or(false),
         }),
         "matrix-plan" => Ok(Command::MatrixPlan {
             manifest: required_path(&args[1..], "--manifest")?,
@@ -1223,6 +1272,8 @@ fn analysis_report_markdown(
     }
     report.push('\n');
 
+    push_behavioral_diagnostics(&mut report, baseline_records, candidate_records);
+
     report.push_str("## Interpretation Guardrails\n\n");
     report.push_str("- The main claim requires lower candidate uncached input and no task-success regression.\n");
     report.push_str("- Warm-up calls should be excluded from these JSONL files unless the paper explicitly labels a cold-start analysis.\n");
@@ -1308,12 +1359,107 @@ fn push_quality_gate(report: &mut String, baseline: &RunStats, candidate: &RunSt
     }
 }
 
+fn push_behavioral_diagnostics(
+    report: &mut String,
+    baseline_records: &[RunRecord],
+    candidate_records: &[RunRecord],
+) {
+    let mut baseline_by_key: BTreeMap<(String, String, u64), &RunRecord> = BTreeMap::new();
+    for record in baseline_records {
+        baseline_by_key.insert(
+            (
+                record.task_id.clone(),
+                record.slice.clone(),
+                record.repeat_id.unwrap_or(0),
+            ),
+            record,
+        );
+    }
+
+    let mut rows = Vec::new();
+    for candidate in candidate_records {
+        let key = (
+            candidate.task_id.clone(),
+            candidate.slice.clone(),
+            candidate.repeat_id.unwrap_or(0),
+        );
+        let Some(baseline) = baseline_by_key.get(&key) else {
+            continue;
+        };
+        let baseline_uncached = baseline
+            .input_tokens
+            .saturating_sub(baseline.cached_input_tokens);
+        let candidate_uncached = candidate
+            .input_tokens
+            .saturating_sub(candidate.cached_input_tokens);
+        let mut notes = Vec::new();
+        if let (Some(baseline_turns), Some(candidate_turns)) =
+            (baseline.turns_to_completion, candidate.turns_to_completion)
+        {
+            if candidate_turns >= baseline_turns.saturating_mul(2)
+                && candidate_turns >= baseline_turns + 3
+            {
+                notes.push("candidate used many more agent turns");
+            }
+        }
+        if candidate_uncached > baseline_uncached + baseline_uncached / 4 {
+            notes.push("candidate uncached input increased");
+        }
+        if candidate.output_tokens > baseline.output_tokens + baseline.output_tokens / 2 {
+            notes.push("candidate output increased");
+        }
+        if !notes.is_empty() {
+            rows.push((
+                baseline,
+                candidate,
+                baseline_uncached,
+                candidate_uncached,
+                notes,
+            ));
+        }
+    }
+
+    report.push_str("## Behavioral Diagnostics\n\n");
+    if rows.is_empty() {
+        report.push_str("- No paired behavioral outlier was detected from turns, uncached input, or output-token deltas.\n\n");
+        return;
+    }
+
+    report.push_str("These rows flag cases where the candidate may have changed agent behavior, not just prefix cache shape.\n\n");
+    report.push_str("| Candidate run | Task | Slice | Repeat | Baseline turns | Candidate turns | Baseline uncached | Candidate uncached | Baseline out | Candidate out | Note |\n");
+    report.push_str("| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n");
+    for (baseline, candidate, baseline_uncached, candidate_uncached, notes) in rows {
+        let _ = writeln!(
+            report,
+            "| `{}` | `{}` | `{}` | {} | {} | {} | {} | {} | {} | {} | {} |",
+            markdown_cell(&candidate.run_id),
+            markdown_cell(&candidate.task_id),
+            markdown_cell(&candidate.slice),
+            candidate.repeat_id.unwrap_or(0),
+            option_u64_display(baseline.turns_to_completion),
+            option_u64_display(candidate.turns_to_completion),
+            baseline_uncached,
+            candidate_uncached,
+            baseline.output_tokens,
+            candidate.output_tokens,
+            notes.join("; ")
+        );
+    }
+    report.push('\n');
+}
+
 fn cache_hit_display(stats: &RunStats) -> String {
     display_optional_percent(ratio(stats.cached_input, stats.input))
 }
 
 fn success_display(stats: &RunStats) -> String {
     format!("{}/{}", stats.task_success, stats.records)
+}
+
+fn option_u64_display(value: Option<u64>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "n/a".to_string())
 }
 
 fn markdown_cell(value: &str) -> String {
@@ -1577,6 +1723,353 @@ fn run_claude_json_import(options: ClaudeJsonImportOptions<'_>) -> Result<i32, S
         println!("{line}");
     }
     Ok(0)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EvidenceCodeChange {
+    event_index: usize,
+    timestamp: Option<String>,
+    tool_name: Option<String>,
+    call_id: Option<String>,
+    title: String,
+    diff: EvidenceDiff,
+    before: String,
+    after: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EvidenceDiff {
+    kind: String,
+    files: Vec<String>,
+    additions: u64,
+    deletions: u64,
+    summary: String,
+    preview: String,
+}
+
+fn run_evidence_diff(input: &Path, output: Option<&Path>) -> Result<i32, String> {
+    let events = read_session_events(input)?;
+    let code_changes = extract_evidence_diffs(&events);
+    let value = evidence_diff_output(input, &code_changes);
+    let text = serde_json::to_string_pretty(&value)
+        .map_err(|err| format!("Could not serialize evidence diff output: {err}"))?;
+    if let Some(output) = output {
+        if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("Could not create {}: {err}", parent.display()))?;
+        }
+        fs::write(output, format!("{text}\n"))
+            .map_err(|err| format!("Could not write {}: {err}", output.display()))?;
+        println!("Wrote evidence diff: {}", output.display());
+    } else {
+        println!("{text}");
+    }
+    Ok(0)
+}
+
+fn read_session_events(input: &Path) -> Result<Vec<JsonValue>, String> {
+    if let Ok(values) = read_jsonl_values(input) {
+        if !values.is_empty() {
+            return Ok(values);
+        }
+    }
+
+    let value = read_json(input)?;
+    if let Some(array) = value.as_array() {
+        return Ok(array.clone());
+    }
+    for key in ["events", "session", "replay", "history", "messages"] {
+        if let Some(array) = value.get(key).and_then(JsonValue::as_array) {
+            return Ok(array.clone());
+        }
+    }
+    Ok(vec![value])
+}
+
+fn extract_evidence_diffs(events: &[JsonValue]) -> Vec<EvidenceCodeChange> {
+    let mut changes = Vec::new();
+    for (event_index, event) in events.iter().enumerate() {
+        if !is_toolish_event(event) {
+            continue;
+        }
+        let mut seen = BTreeSet::new();
+        for text in diff_candidate_texts(event) {
+            let Some(diff) = parse_diff_metadata(&text) else {
+                continue;
+            };
+            if !seen.insert(diff.preview.clone()) {
+                continue;
+            }
+            let (before, after) = diff_before_after(&text);
+            let tool_name = event_string(event, &["tool_name", "toolName", "name"]);
+            let title = format!("{} evidence diff", tool_name.as_deref().unwrap_or("tool"));
+            changes.push(EvidenceCodeChange {
+                event_index,
+                timestamp: event_string(event, &["timestamp", "time", "created_at", "createdAt"]),
+                tool_name,
+                call_id: event_string(event, &["call_id", "callId", "tool_call_id", "id"]),
+                title,
+                diff,
+                before: truncate_chars(&before, 6000),
+                after: truncate_chars(&after, 6000),
+            });
+        }
+    }
+    changes
+}
+
+fn evidence_diff_output(input: &Path, changes: &[EvidenceCodeChange]) -> JsonValue {
+    let code_changes = changes
+        .iter()
+        .map(|change| {
+            json!({
+                "event_index": change.event_index,
+                "timestamp": change.timestamp,
+                "tool_name": change.tool_name,
+                "call_id": change.call_id,
+                "title": change.title,
+                "summary": change.diff.summary,
+                "diff": {
+                    "kind": change.diff.kind,
+                    "files": change.diff.files,
+                    "additions": change.diff.additions,
+                    "deletions": change.diff.deletions,
+                    "summary": change.diff.summary,
+                    "preview": change.diff.preview,
+                    "before": change.before,
+                    "after": change.after
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "evidence_scope": "session_tool_record",
+        "source": input.display().to_string(),
+        "limitations": [
+            "This evidence diff is reconstructed from session/tool records.",
+            "It answers what a tool call claimed to change at that time.",
+            "It is not the current filesystem diff against git baseline."
+        ],
+        "code_changes": code_changes
+    })
+}
+
+fn is_toolish_event(event: &JsonValue) -> bool {
+    if let Some(kind) = event_string(event, &["type", "event", "event_type", "eventType"]) {
+        let kind = kind.to_ascii_lowercase();
+        if kind.contains("tool") || kind.contains("function_call") || kind.contains("function") {
+            return true;
+        }
+    }
+    event.get("tool_name").is_some()
+        || event.get("toolName").is_some()
+        || event.get("tool_call").is_some()
+        || event.get("tool_call_id").is_some()
+        || event.get("function_call").is_some()
+        || event.get("function_call_output").is_some()
+}
+
+fn diff_candidate_texts(event: &JsonValue) -> Vec<String> {
+    let mut texts = Vec::new();
+    collect_diff_candidate_texts(event, false, &mut texts);
+    texts
+}
+
+fn collect_diff_candidate_texts(
+    value: &JsonValue,
+    in_interesting_field: bool,
+    texts: &mut Vec<String>,
+) {
+    match value {
+        JsonValue::String(text) => {
+            if in_interesting_field {
+                texts.push(text.clone());
+            }
+        }
+        JsonValue::Array(array) => {
+            for item in array {
+                collect_diff_candidate_texts(item, in_interesting_field, texts);
+            }
+        }
+        JsonValue::Object(object) => {
+            for (key, child) in object {
+                let interesting = in_interesting_field || is_diff_evidence_field(key);
+                collect_diff_candidate_texts(child, interesting, texts);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn is_diff_evidence_field(key: &str) -> bool {
+    matches!(
+        key,
+        "input"
+            | "arguments"
+            | "args"
+            | "output"
+            | "result"
+            | "message"
+            | "text"
+            | "patch"
+            | "diff"
+    )
+}
+
+fn parse_diff_metadata(text: &str) -> Option<EvidenceDiff> {
+    let kind = if is_apply_patch(text) {
+        "apply_patch"
+    } else if is_unified_diff(text) {
+        "unified_diff"
+    } else {
+        return None;
+    };
+    let mut files = extract_diff_files(text, kind);
+    files.sort();
+    files.dedup();
+    let (additions, deletions) = count_diff_changes(text);
+    let summary = format!(
+        "{kind}: {} files +{} -{}",
+        files.len(),
+        additions,
+        deletions
+    );
+    Some(EvidenceDiff {
+        kind: kind.to_string(),
+        files,
+        additions,
+        deletions,
+        summary,
+        preview: truncate_chars(text.trim(), 12_000),
+    })
+}
+
+fn is_apply_patch(text: &str) -> bool {
+    text.contains("*** Begin Patch") && text.contains("*** End Patch")
+}
+
+fn is_unified_diff(text: &str) -> bool {
+    text.contains("diff --git ")
+        || (text.lines().any(|line| line.starts_with("--- "))
+            && text.lines().any(|line| line.starts_with("+++ "))
+            && text.lines().any(|line| line.starts_with("@@")))
+}
+
+fn extract_diff_files(text: &str, kind: &str) -> Vec<String> {
+    let mut files = Vec::new();
+    for line in text.lines() {
+        if kind == "apply_patch" {
+            for prefix in ["*** Add File: ", "*** Update File: ", "*** Delete File: "] {
+                if let Some(path) = line.strip_prefix(prefix) {
+                    files.push(path.trim().to_string());
+                }
+            }
+        }
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            let parts = rest.split_whitespace().collect::<Vec<_>>();
+            if let Some(path) = parts.get(1).or_else(|| parts.first()) {
+                files.push(strip_diff_path_prefix(path).to_string());
+            }
+        } else if let Some(path) = line.strip_prefix("--- ") {
+            let path = strip_diff_path_prefix(path.trim());
+            if path != "/dev/null" {
+                files.push(path.to_string());
+            }
+        } else if let Some(path) = line.strip_prefix("+++ ") {
+            let path = strip_diff_path_prefix(path.trim());
+            if path != "/dev/null" {
+                files.push(path.to_string());
+            }
+        }
+    }
+    files
+}
+
+fn strip_diff_path_prefix(path: &str) -> &str {
+    path.strip_prefix("a/")
+        .or_else(|| path.strip_prefix("b/"))
+        .unwrap_or(path)
+}
+
+fn count_diff_changes(text: &str) -> (u64, u64) {
+    let mut additions = 0;
+    let mut deletions = 0;
+    for line in text.lines() {
+        if is_diff_count_header(line) {
+            continue;
+        }
+        if line.starts_with('+') {
+            additions += 1;
+        } else if line.starts_with('-') {
+            deletions += 1;
+        }
+    }
+    (additions, deletions)
+}
+
+fn is_diff_count_header(line: &str) -> bool {
+    line.starts_with("+++ ")
+        || line.starts_with("--- ")
+        || line.starts_with("diff --git ")
+        || line.starts_with("index ")
+        || line.starts_with("@@")
+        || line.starts_with("*** ")
+}
+
+fn diff_before_after(text: &str) -> (String, String) {
+    let mut before = Vec::new();
+    let mut after = Vec::new();
+    for line in text.lines() {
+        if should_skip_excerpt_line(line) {
+            continue;
+        }
+        if let Some(path) = apply_patch_file_marker(line) {
+            let marker = format!("# {path}");
+            before.push(marker.clone());
+            after.push(marker);
+        } else if line.starts_with("@@") {
+            before.push(line.to_string());
+            after.push(line.to_string());
+        } else if let Some(content) = line.strip_prefix('+') {
+            after.push(content.to_string());
+        } else if let Some(content) = line.strip_prefix('-') {
+            before.push(content.to_string());
+        } else if let Some(content) = line.strip_prefix(' ') {
+            before.push(content.to_string());
+            after.push(content.to_string());
+        } else {
+            before.push(line.to_string());
+            after.push(line.to_string());
+        }
+    }
+    (before.join("\n"), after.join("\n"))
+}
+
+fn should_skip_excerpt_line(line: &str) -> bool {
+    line.starts_with("diff --git ")
+        || line.starts_with("index ")
+        || line.starts_with("--- ")
+        || line.starts_with("+++ ")
+        || line == "*** Begin Patch"
+        || line == "*** End Patch"
+}
+
+fn apply_patch_file_marker(line: &str) -> Option<&str> {
+    for prefix in ["*** Add File: ", "*** Update File: ", "*** Delete File: "] {
+        if let Some(path) = line.strip_prefix(prefix) {
+            return Some(path.trim());
+        }
+    }
+    None
+}
+
+fn event_string(value: &JsonValue, keys: &[&str]) -> Option<String> {
+    for key in keys {
+        if let Some(text) = find_key_recursive(value, key).and_then(JsonValue::as_str) {
+            return Some(text.to_string());
+        }
+    }
+    None
 }
 
 fn direct_json_model(value: &JsonValue) -> Option<&str> {
@@ -2167,6 +2660,325 @@ fn run_pilot_plan(
     Ok(0)
 }
 
+fn run_pilot(
+    manifest_path: &Path,
+    task_id: &str,
+    experiment_dir: &Path,
+    slice_filter: Option<&str>,
+    repeats: u64,
+    execute: bool,
+) -> Result<i32, String> {
+    if repeats == 0 {
+        return Err("--repeats must be at least 1".to_string());
+    }
+
+    let manifest = read_json(manifest_path)?;
+    let fixture_path = manifest
+        .get("fixture")
+        .and_then(|fixture| fixture.get("path"))
+        .and_then(JsonValue::as_str)
+        .unwrap_or("runs/fixtures/real-coding-v2");
+    let model = pilot_model(&manifest);
+    let task = pilot_task(&manifest, task_id)?;
+    let conditions = pilot_conditions(&manifest)?;
+    let slices = pilot_slices(&manifest, slice_filter)?;
+
+    fs::create_dir_all(experiment_dir.join("notes")).map_err(|err| {
+        format!(
+            "Could not create {}: {err}",
+            experiment_dir.join("notes").display()
+        )
+    })?;
+    let script_path = experiment_dir.join("notes").join("run-pilot.sh");
+    let script = pilot_shell_script(
+        manifest_path,
+        experiment_dir,
+        fixture_path,
+        &model,
+        &task,
+        &conditions,
+        &slices,
+        repeats,
+    );
+    fs::write(&script_path, script)
+        .map_err(|err| format!("Could not write {}: {err}", script_path.display()))?;
+
+    println!("Pilot runner script written");
+    println!("Script: {}", script_path.display());
+    println!("Task: {}", task.id);
+    println!("Repeats: {repeats}");
+    println!(
+        "Slices: {}",
+        slices
+            .iter()
+            .map(|slice| slice.id.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    println!();
+    println!("Default behavior is safe: this command only writes the script.");
+    println!("Run manually with:");
+    println!("  bash {}", shell_word(&script_path.display().to_string()));
+    println!();
+    println!(
+        "To execute from the CLI, pass --execute true. This may call Claude and incur model cost."
+    );
+
+    if !Path::new(fixture_path).exists() {
+        println!();
+        println!(
+            "[WARN] Fixture path does not exist locally: {}",
+            fixture_path
+        );
+        println!("       The script is still useful as a reproducible runner, but execution will fail until the fixture exists.");
+    }
+
+    if !execute {
+        return Ok(0);
+    }
+
+    println!();
+    println!("Executing pilot script...");
+    let status = ProcessCommand::new("bash")
+        .arg(&script_path)
+        .status()
+        .map_err(|err| format!("Could not execute {}: {err}", script_path.display()))?;
+    Ok(status.code().unwrap_or(1))
+}
+
+fn pilot_shell_script(
+    manifest_path: &Path,
+    experiment_dir: &Path,
+    fixture_path: &str,
+    model: &str,
+    task: &PilotTask,
+    conditions: &[PilotCondition],
+    slices: &[PilotSlice],
+    repeats: u64,
+) -> String {
+    let mut script = String::new();
+    let repo_root = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    script.push_str("#!/usr/bin/env bash\n");
+    script.push_str("set -euo pipefail\n\n");
+    let _ = writeln!(
+        script,
+        "REPO_ROOT=\"${{REPO_ROOT:-{}}}\"",
+        shell_word(&repo_root.display().to_string())
+    );
+    if experiment_dir.is_absolute() {
+        let _ = writeln!(
+            script,
+            "EXP_DIR={}",
+            shell_word(&experiment_dir.display().to_string())
+        );
+    } else {
+        let _ = writeln!(
+            script,
+            "EXP_DIR=\"$REPO_ROOT/{}\"",
+            experiment_dir.display()
+        );
+    }
+    if Path::new(fixture_path).is_absolute() {
+        let _ = writeln!(script, "FIXTURE={}", shell_word(fixture_path));
+    } else {
+        let _ = writeln!(script, "FIXTURE=\"$REPO_ROOT/{fixture_path}\"");
+    }
+    script.push_str(
+        "export GIT_CEILING_DIRECTORIES=\"${GIT_CEILING_DIRECTORIES:-$REPO_ROOT/runs}\"\n",
+    );
+    let _ = writeln!(
+        script,
+        "MANIFEST={}",
+        shell_word(&manifest_path.display().to_string())
+    );
+    let _ = writeln!(script, "TASK_ID={}", shell_word(&task.id));
+    let _ = writeln!(script, "MODEL={}", shell_word(model));
+    script.push('\n');
+    script.push_str("if [[ ! -d \"$FIXTURE\" ]]; then\n");
+    script.push_str("  echo \"Fixture directory is missing: $FIXTURE\" >&2\n");
+    script.push_str("  exit 2\n");
+    script.push_str("fi\n\n");
+    script.push_str("if [[ ! -f \"$EXP_DIR/manifest.json\" ]]; then\n");
+    script.push_str("  cargo run --quiet -- init-experiment --dir \"$EXP_DIR\"\n");
+    script.push_str("fi\n");
+    script.push_str("mkdir -p \"$EXP_DIR/prompts\" \"$EXP_DIR/drift\" \"$EXP_DIR/raw/claude-json\" \"$EXP_DIR/validation\" \"$EXP_DIR/notes\"\n");
+    script.push_str("for existing in \"$EXP_DIR/baseline.jsonl\" \"$EXP_DIR/cache-friendly.jsonl\" \"$EXP_DIR/notes/run-log.tsv\"; do\n");
+    script.push_str("  if [[ -s \"$existing\" ]]; then\n");
+    script.push_str(
+        "    echo \"Refusing to overwrite non-empty experiment artifact: $existing\" >&2\n",
+    );
+    script.push_str("    exit 2\n");
+    script.push_str("  fi\n");
+    script.push_str("done\n");
+    script.push_str("printf 'run_id\\tclaude_status\\tvalidation_status\\tcondition\\tslice\\trepeat\\tphase\\n' > \"$EXP_DIR/notes/run-log.tsv\"\n\n");
+
+    for (index, prompt) in task.prompt_turns.iter().enumerate() {
+        let turn = index + 1;
+        let _ = writeln!(
+            script,
+            "cat > \"$EXP_DIR/prompts/{}-turn{turn}.txt\" <<'PROMPT_EOF'",
+            task.id
+        );
+        script.push_str(prompt);
+        if !prompt.ends_with('\n') {
+            script.push('\n');
+        }
+        script.push_str("PROMPT_EOF\n\n");
+    }
+
+    script.push_str("ensure_fixture_git() {\n");
+    script.push_str("  local top\n");
+    script.push_str(
+        "  top=\"$(cd \"$FIXTURE\" && git rev-parse --show-toplevel 2>/dev/null || true)\"\n",
+    );
+    script.push_str("  if [[ \"$top\" != \"$FIXTURE\" ]]; then\n");
+    script.push_str("    (cd \"$FIXTURE\" && git init -q)\n");
+    script.push_str("    (cd \"$FIXTURE\" && git add Cargo.toml Cargo.lock README.md src tests examples task-reset.sh task-validate.sh)\n");
+    script.push_str("    (cd \"$FIXTURE\" && git -c user.name='make-agents-cheaper' -c user.email='make-agents-cheaper@example.invalid' commit -q -m 'fixture baseline' >/dev/null 2>&1 || true)\n");
+    script.push_str("  fi\n");
+    script.push_str("  local exclude=\"$FIXTURE/.git/info/exclude\"\n");
+    script.push_str("  for pattern in '.baseline/' '.claude-trace/' 'target/'; do\n");
+    script.push_str("    grep -qxF \"$pattern\" \"$exclude\" 2>/dev/null || printf '%s\\n' \"$pattern\" >> \"$exclude\"\n");
+    script.push_str("  done\n");
+    script.push_str("}\n\n");
+    script.push_str("ensure_fixture_git\n\n");
+
+    script.push_str("reset_fixture() {\n");
+    script.push_str("  (cd \"$FIXTURE\" && bash task-reset.sh \"$TASK_ID\")\n");
+    script.push_str(
+        "  rm -f \"$FIXTURE/.cache-drift-probe\" \"$FIXTURE/.local-git-status-snapshot\"\n",
+    );
+    script.push_str("  rm -rf \"$FIXTURE/.local-memory\"\n");
+    script.push_str("}\n\n");
+
+    script.push_str("condition_flags() {\n");
+    script.push_str("  case \"$1\" in\n");
+    for condition in conditions {
+        let flags = condition
+            .flags
+            .iter()
+            .map(|flag| shell_word(flag))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let _ = writeln!(
+            script,
+            "    {}) printf '%s\\n' {} ;;",
+            condition.id,
+            shell_word(&flags)
+        );
+    }
+    script.push_str("    *) echo \"unknown condition: $1\" >&2; return 2 ;;\n");
+    script.push_str("  esac\n");
+    script.push_str("}\n\n");
+
+    script.push_str("apply_drift() {\n");
+    script.push_str("  case \"$1\" in\n");
+    for slice in slices {
+        let _ = writeln!(script, "    {})", slice.id);
+        if slice.drift_actions.is_empty() {
+            script.push_str("      ;;\n");
+        } else {
+            for action in &slice.drift_actions {
+                let _ = writeln!(script, "      {action}");
+            }
+            script.push_str("      ;;\n");
+        }
+    }
+    script.push_str("    *) echo \"unknown slice: $1\" >&2; return 2 ;;\n");
+    script.push_str("  esac\n");
+    script.push_str("}\n\n");
+
+    script.push_str("run_one() {\n");
+    script.push_str("  local condition=\"$1\"\n");
+    script.push_str("  local slice=\"$2\"\n");
+    script.push_str("  local repeat=\"$3\"\n");
+    script.push_str("  local phase=\"$4\"\n");
+    script.push_str("  local run_id=\"${TASK_ID}-${slice}-${condition}-r${repeat}-${phase}\"\n");
+    script.push_str("  local validation_status=\"NA\"\n");
+    script.push_str("  local prompt_file=\"$EXP_DIR/prompts/${TASK_ID}-turn1.txt\"\n");
+    script.push_str("  local flag_string\n");
+    script.push_str("  if [[ ! -s \"$prompt_file\" ]]; then\n");
+    script.push_str("    echo \"Prompt file is missing or empty: $prompt_file\" >&2\n");
+    script.push_str("    return 2\n");
+    script.push_str("  fi\n");
+    script.push_str("  flag_string=\"$(condition_flags \"$condition\")\"\n");
+    script.push_str("  local extra=()\n");
+    script.push_str("  if [[ -n \"$flag_string\" ]]; then\n");
+    script.push_str("    read -r -a extra <<< \"$flag_string\"\n");
+    script.push_str("  fi\n");
+    script.push_str("  reset_fixture\n");
+    script.push_str("  if [[ \"$phase\" == \"measured\" ]]; then\n");
+    script.push_str("    (cd \"$FIXTURE\" && apply_drift \"$slice\")\n");
+    script.push_str("    (cd \"$FIXTURE\" && git status --short > \"$EXP_DIR/drift/${run_id}.git-status.txt\") || true\n");
+    script.push_str("  fi\n");
+    script.push_str("  echo \"BEGIN $run_id\"\n");
+    script.push_str("  set +e\n");
+    script.push_str("  (cd \"$FIXTURE\" && claude -p --model \"$MODEL\" --output-format json --no-session-persistence --permission-mode bypassPermissions \"${extra[@]}\" \"$(cat \"$prompt_file\")\") > \"$EXP_DIR/raw/claude-json/${run_id}.json\" 2> \"$EXP_DIR/raw/claude-json/${run_id}.stderr.txt\"\n");
+    script.push_str("  local claude_status=$?\n");
+    script.push_str("  if [[ \"$phase\" == \"measured\" && \"$claude_status\" -eq 0 ]]; then\n");
+    let _ = writeln!(
+        script,
+        "    (cd \"$FIXTURE\" && {}) > \"$EXP_DIR/validation/${{run_id}}.txt\" 2>&1",
+        task.validation
+    );
+    script.push_str("    validation_status=$?\n");
+    script.push_str("  fi\n");
+    script.push_str("  set -e\n");
+    script.push_str("  printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' \"$run_id\" \"$claude_status\" \"$validation_status\" \"$condition\" \"$slice\" \"$repeat\" \"$phase\" >> \"$EXP_DIR/notes/run-log.tsv\"\n");
+    script.push_str("  echo \"END $run_id claude_status=$claude_status validation_status=$validation_status\"\n");
+    script.push_str("  reset_fixture\n");
+    script.push_str("}\n\n");
+
+    for slice in slices {
+        for repeat in 1..=repeats {
+            for condition in conditions {
+                let _ = writeln!(
+                    script,
+                    "run_one {} {} {repeat} warm-up",
+                    shell_word(&condition.id),
+                    shell_word(&slice.id)
+                );
+            }
+            for condition in conditions {
+                let _ = writeln!(
+                    script,
+                    "run_one {} {} {repeat} measured",
+                    shell_word(&condition.id),
+                    shell_word(&slice.id)
+                );
+            }
+        }
+    }
+
+    script.push_str("\n: > \"$EXP_DIR/baseline.jsonl\"\n");
+    script.push_str(": > \"$EXP_DIR/cache-friendly.jsonl\"\n");
+    script.push_str("while IFS=$'\\t' read -r run_id claude_status validation_status condition slice repeat phase; do\n");
+    script.push_str("  [[ \"$run_id\" == \"run_id\" ]] && continue\n");
+    script.push_str("  [[ \"$phase\" == \"measured\" ]] || continue\n");
+    script.push_str("  [[ \"$claude_status\" == \"0\" ]] || continue\n");
+    script.push_str("  output=\"$EXP_DIR/baseline.jsonl\"\n");
+    script.push_str("  [[ \"$condition\" == \"cache-friendly\" ]] && output=\"$EXP_DIR/cache-friendly.jsonl\"\n");
+    script.push_str("  passed=false\n");
+    script.push_str("  [[ \"$validation_status\" == \"0\" ]] && passed=true\n");
+    script.push_str("  cargo run --quiet -- claude-json-import \\\n");
+    script.push_str("    --input \"$EXP_DIR/raw/claude-json/${run_id}.json\" \\\n");
+    script.push_str("    --run-id \"$run_id\" \\\n");
+    script.push_str("    --task-id \"$TASK_ID\" \\\n");
+    script.push_str("    --condition \"$condition\" \\\n");
+    script.push_str("    --slice \"$slice\" \\\n");
+    script.push_str("    --repeat-id \"$repeat\" \\\n");
+    script.push_str("    --phase \"$phase\" \\\n");
+    script.push_str("    --validation-path \"$EXP_DIR/validation/${run_id}.txt\" \\\n");
+    script.push_str("    --validation-passed \"$passed\" \\\n");
+    script.push_str("    --task-success \"$passed\" \\\n");
+    script.push_str("    --output \"$output\" >/dev/null\n");
+    script.push_str("done < \"$EXP_DIR/notes/run-log.tsv\"\n\n");
+    script.push_str("cargo run --quiet -- eval --baseline \"$EXP_DIR/baseline.jsonl\" --candidate \"$EXP_DIR/cache-friendly.jsonl\" | tee \"$EXP_DIR/eval.txt\"\n");
+    script.push_str("cargo run --quiet -- task-report --baseline \"$EXP_DIR/baseline.jsonl\" --candidate \"$EXP_DIR/cache-friendly.jsonl\" | tee \"$EXP_DIR/task-report.txt\"\n");
+    script.push_str("cargo run --quiet -- analysis-report --baseline \"$EXP_DIR/baseline.jsonl\" --candidate \"$EXP_DIR/cache-friendly.jsonl\" --output \"$EXP_DIR/analysis-report.md\"\n");
+    script
+}
+
 #[derive(Debug, Clone)]
 struct PilotTask {
     id: String,
@@ -2371,6 +3183,9 @@ fn print_pilot_call(
 }
 
 fn shell_word(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
     if value
         .chars()
         .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | '/' | ':'))
@@ -2791,11 +3606,14 @@ impl RunStats {
 
 #[derive(Debug, Clone)]
 struct RunRecord {
+    run_id: String,
     task_id: String,
     slice: String,
+    repeat_id: Option<u64>,
     input_tokens: u64,
     cached_input_tokens: u64,
     output_tokens: u64,
+    turns_to_completion: Option<u64>,
     ttft_ms: Option<u64>,
     total_latency_ms: Option<u64>,
     validation_passed: bool,
@@ -2828,6 +3646,11 @@ impl RunRecord {
 
     fn from_json(value: &JsonValue) -> Self {
         Self {
+            run_id: value
+                .get("run_id")
+                .and_then(JsonValue::as_str)
+                .unwrap_or("unknown")
+                .to_string(),
             task_id: value
                 .get("task_id")
                 .and_then(JsonValue::as_str)
@@ -2838,9 +3661,11 @@ impl RunRecord {
                 .and_then(JsonValue::as_str)
                 .unwrap_or("unspecified")
                 .to_string(),
+            repeat_id: json_u64(value, "repeat_id").or_else(|| json_u64(value, "turn_index")),
             input_tokens: json_u64(value, "input_tokens").unwrap_or(0),
             cached_input_tokens: json_u64(value, "cached_input_tokens").unwrap_or(0),
             output_tokens: json_u64(value, "output_tokens").unwrap_or(0),
+            turns_to_completion: json_u64(value, "turns_to_completion"),
             ttft_ms: json_u64(value, "ttft_ms"),
             total_latency_ms: json_u64(value, "total_latency_ms"),
             validation_passed: json_bool(value, "validation_passed").unwrap_or(false),
@@ -2936,6 +3761,16 @@ fn truncate_for_table(value: &str, width: usize) -> String {
     } else {
         let mut truncated: String = value.chars().take(width.saturating_sub(1)).collect();
         truncated.push('~');
+        truncated
+    }
+}
+
+fn truncate_chars(value: &str, width: usize) -> String {
+    if value.chars().count() <= width {
+        value.to_string()
+    } else {
+        let mut truncated: String = value.chars().take(width.saturating_sub(13)).collect();
+        truncated.push_str("\n...[truncated]");
         truncated
     }
 }
@@ -3125,6 +3960,22 @@ env_key = "OPENAI_API_KEY"
         );
 
         let command = parse_args([
+            "evidence-diff",
+            "--input",
+            "session.jsonl",
+            "--output",
+            "code-changes.json",
+        ])
+        .unwrap();
+        assert_eq!(
+            command,
+            Command::EvidenceDiff {
+                input: PathBuf::from("session.jsonl"),
+                output: Some(PathBuf::from("code-changes.json"))
+            }
+        );
+
+        let command = parse_args([
             "eval",
             "--baseline",
             "a.jsonl",
@@ -3181,6 +4032,34 @@ env_key = "OPENAI_API_KEY"
                 experiment_dir: PathBuf::from("runs/pilot"),
                 slice: Some("dynamic-drift".to_string()),
                 repeats: 2
+            }
+        );
+
+        let command = parse_args([
+            "run-pilot",
+            "--manifest",
+            "suite.json",
+            "--task",
+            "docs-token-accounting",
+            "--experiment-dir",
+            "runs/pilot",
+            "--slice",
+            "dynamic-drift",
+            "--repeats",
+            "2",
+            "--execute",
+            "true",
+        ])
+        .unwrap();
+        assert_eq!(
+            command,
+            Command::RunPilot {
+                manifest: PathBuf::from("suite.json"),
+                task: "docs-token-accounting".to_string(),
+                experiment_dir: PathBuf::from("runs/pilot"),
+                slice: Some("dynamic-drift".to_string()),
+                repeats: 2,
+                execute: true
             }
         );
 
@@ -3324,6 +4203,51 @@ env_key = "OPENAI_API_KEY"
         let blocks = extract_blocks(&value);
         assert_eq!(blocks.len(), 2);
         assert!(has_direct_cache_control(&blocks[0]));
+    }
+
+    #[test]
+    fn extracts_apply_patch_evidence_diff() {
+        let event = json!({
+            "type": "tool_call",
+            "timestamp": "2026-05-12T00:00:00Z",
+            "tool_name": "apply_patch",
+            "call_id": "call-1",
+            "input": "*** Begin Patch\n*** Update File: src/lib.rs\n@@\n-old\n+new\n context\n*** End Patch\n"
+        });
+        let changes = extract_evidence_diffs(&[event]);
+        assert_eq!(changes.len(), 1);
+        let change = &changes[0];
+        assert_eq!(change.event_index, 0);
+        assert_eq!(change.tool_name.as_deref(), Some("apply_patch"));
+        assert_eq!(change.diff.kind, "apply_patch");
+        assert_eq!(change.diff.files, vec!["src/lib.rs".to_string()]);
+        assert_eq!(change.diff.additions, 1);
+        assert_eq!(change.diff.deletions, 1);
+        assert!(change.before.contains("old"));
+        assert!(change.after.contains("new"));
+        assert!(change.before.contains("# src/lib.rs"));
+    }
+
+    #[test]
+    fn extracts_unified_diff_evidence_diff_without_counting_headers() {
+        let event = json!({
+            "event": "function_call_output",
+            "name": "Bash",
+            "id": "call-2",
+            "result": {
+                "text": "diff --git a/README.md b/README.md\nindex 111..222 100644\n--- a/README.md\n+++ b/README.md\n@@ -1,2 +1,2 @@\n-old title\n+new title\n unchanged\n"
+            }
+        });
+        let changes = extract_evidence_diffs(&[event]);
+        assert_eq!(changes.len(), 1);
+        let change = &changes[0];
+        assert_eq!(change.diff.kind, "unified_diff");
+        assert_eq!(change.diff.files, vec!["README.md".to_string()]);
+        assert_eq!(change.diff.additions, 1);
+        assert_eq!(change.diff.deletions, 1);
+        assert!(change.before.contains("old title"));
+        assert!(change.after.contains("new title"));
+        assert!(!change.before.contains("+++ b/README.md"));
     }
 
     #[test]

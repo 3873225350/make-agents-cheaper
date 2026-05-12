@@ -47,7 +47,7 @@ include at least one docs-only task
 ## Status
 
 ```text
-full-matrix scaffold generated; bounded V2 pilot complete with mixed/negative savings result
+full-matrix scaffold generated; fixed V2 dynamic-drift diagnostic is positive for the narrow prefix-cache claim
 ```
 
 ## Live Slice Attempt

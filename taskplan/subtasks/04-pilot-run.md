@@ -36,7 +36,7 @@ eval summary
 ## Status
 
 ```text
-direct-json V2 pilot complete; mixed/negative for primary savings claim
+fixed V2 dynamic-drift diagnostic supports the narrow prefix-cache claim
 ```
 
 ## Live Pilot Snapshot
@@ -92,12 +92,12 @@ commands, validation log paths, and final `eval` / `task-report` /
 
 Trace-captured reruns are optional and only needed if request-shape artifacts are explicitly required.
 
-## V2 Direct-JSON Pilot Snapshot
+## V2 Prefix Diagnostic Snapshot
 
 Experiment:
 
 ```text
-runs/2026-05-11-claude-mimo-direct-json-v2-pilot/
+runs/2026-05-12-claude-mimo-v2-diagnostic-r3/
 ```
 
 Task:
@@ -109,22 +109,19 @@ docs-token-accounting
 Imported measured rows:
 
 ```text
-baseline: 6
-cache-friendly: 6
-validation: 12/12 passed
+baseline: 3
+cache-friendly: 3
+validation: 6/6 passed
 ```
 
-Per-slice all-runs result:
+Fixed dynamic-drift all-runs result:
 
 | Slice | Baseline uncached | Cache-friendly uncached | Ratio | Baseline success | Cache-friendly success |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `control-steady` | 8,162 | 7,305 | 0.895x | 3/3 | 3/3 |
-| `dynamic-drift` | 6,470 | 13,930 | 2.153x | 3/3 | 3/3 |
-| aggregate | 14,632 | 21,235 | 1.451x | 6/6 | 6/6 |
+| `dynamic-drift` | 30,082 | 7,817 | 0.260x | 3/3 | 3/3 |
 
 Conclusion:
 
-- This pilot does not support the primary savings claim.
-- `control-steady` improved slightly, but `dynamic-drift` regressed because one cache-friendly measured run took 14 turns and dominated the totals.
-- The result is useful publishable engineering evidence for the repo, but not a paper-facing savings result.
-- Do not claim that moving dynamic state later reduced paid uncached input on this V2 pilot.
+- This fixed diagnostic supports the narrow prefix-cache claim.
+- The old 2026-05-11 V2 pilot remains useful regression-diagnosis evidence, not the headline result.
+- Prefix caching reduces paid uncached input; it does not by itself optimize tool-output volume or guarantee fewer agent turns.

@@ -1,6 +1,10 @@
 # Make Agents Cheaper
 
-A Rust CLI for improving prompt cache hit rate in coding-agent workflows.
+A Rust CLI and research toolkit for **agent token-cost optimization**.
+
+The current focus is a Token Saver for coding agents: improve prompt-cache reuse
+at the harness layer, reduce paid uncached input, and keep task success
+measurable.
 
 Phase 1 is Codex-first. The longer-term goal is to make the same cache-hit discipline useful for Claude Code, Cursor, custom agent runners, and multi-agent routers.
 
@@ -8,48 +12,19 @@ The idea is simple:
 
 > Do not remove context. Make repeated context cacheable.
 
-## Origin
+In one sentence:
 
-Many researchers with training resources work on the model side: training, architecture, distillation, and serving. Many others work on the inference side: cache, KV cache, batching, kernels, and lower-latency serving. These are still mostly model-layer or serving-layer directions.
+> Make long-horizon coding agents cheaper by optimizing prompt-cache reuse outside the model.
 
-This project did not start from "let's make agents cheaper." It started from trying to understand why DeepSeek v4-style systems make tokens cheaper, what cache hit really means, and how this differs from ordinary model use.
+## What It Does
 
-At the same time, while building `claude-trace` and `codex-trace` style tooling for agent visualization and explainability, we saw the concrete request payload. A coding-agent request is not just the user's latest message. It is a harness-assembled bundle of stable instructions, tool schemas, repo rules, session state, transport choices, and dynamic task data.
+- Audits local Codex config for cache-friendly provider, transport, session, and model settings.
+- Fingerprints prompt layers and tool schemas without printing private prompt text.
+- Normalizes Claude Code direct JSON or optional `claude-trace` logs into comparable JSONL.
+- Compares baseline vs cache-friendly runs with quality gates, per-slice tables, and paper-facing reports.
+- Generates reproducible pilot plans and bounded pilot runner scripts.
 
-That made the key question practical:
-
-```text
-In the agent era, what can an individual builder do outside the model?
-```
-
-The answer we explore here is small but useful: make the repeated prefix stable and measurable, so prompt cache hit rate can improve without removing context.
-
-## Positioning: Outside The Model
-
-Model-side work such as cheaper training, sparse inference, distillation, batching, and serving optimization makes each model call cheaper by improving the model or inference stack.
-
-`make-agents-cheaper` works outside the model, at the agent harness layer:
-
-```text
-model-side efficiency:
-  make the model cheaper
-
-harness layer:
-  make repeated agent context cheaper to reuse
-```
-
-The tool does not train a model and does not change model weights. It also is not ordinary prompt shortening. It focuses on the agent harness layer: the configuration, request envelope, transport, session route, and stable prompt prefix that wrap every coding-agent call.
-
-The practical rule is:
-
-```text
-Structure your prompt so stable components come first
-and dynamic components come later.
-```
-
-For this project, "prompt" means the full agent harness payload, not just the user's natural-language instruction.
-
-This is why it can later be packaged as a reusable skill. The same cache-hit discipline can be applied by different agents even if their model providers and UI surfaces differ.
+This is a harness-level counterpart to model-side efficiency work: model providers make token processing cheaper; this project tries to make repeated agent context cheaper to reuse. More background is in `docs/project-positioning.md`.
 
 ## Product Map And Experimental Object
 
@@ -100,21 +75,23 @@ In other words:
 It reduces paid uncached input, not necessarily total input.
 ```
 
-## Pilot Evidence Snapshot
+## Prefix-Cache Evidence Snapshot
 
-The latest V2 direct-json pilot is intentionally published as mixed/negative evidence, not as a savings claim.
+The fixed V2 dynamic-drift diagnostic now supports the narrow prefix-cache claim: moving dynamic harness state later reduced paid uncached input while preserving task success.
 
-![V2 direct-json pilot chart](docs/figures/v2-direct-json-pilot.svg)
+![V2 fixed prefix-cache diagnostic chart](docs/figures/v2-prefix-fixed-diagnostic.svg)
 
 Summary:
 
-- `control-steady`: cache-friendly uncached input was 7,305 vs 8,162 baseline (0.895x), with 3/3 task success on both sides.
-- `dynamic-drift`: cache-friendly uncached input was 13,930 vs 6,470 baseline (2.153x), with 3/3 task success on both sides.
-- Aggregate: cache-friendly uncached input was 21,235 vs 14,632 baseline (1.451x).
+- Cache hit rate improved from 91.66% to 97.67%.
+- Paid uncached input fell from 30,082 to 7,817 tokens (0.260x).
+- Observed cost fell from $0.366976 to $0.258237 (0.704x).
+- Validation and task success stayed at 3/3 vs 3/3.
+- Output tokens increased slightly, from 2,054 to 2,224, so tool-output optimization remains a separate future layer.
 
-So the current V2 pilot does **not** support the primary savings claim. The useful result is methodological: the toolchain preserves the evidence, separates slices, and prevents overclaiming before a larger matrix is run.
+The earlier V2 mixed/negative pilot is retained as a regression case. Diagnosis found a behavioral outlier plus fixture Git-isolation leakage; after fixing absolute prompt paths and fixture-local Git state, the bounded 3-repeat diagnostic returned to the expected direction. This is an incremental prefix optimization: it reduces repeated paid input, but it does not guarantee that tool calls, output verbosity, or agent trajectory will become cheaper.
 
-See `docs/v2-direct-json-pilot.md` and `docs/data/v2-direct-json-pilot-summary.csv` for the derived, commit-safe data. Raw run logs stay ignored under `runs/`.
+See `docs/v2-prefix-fixed-diagnostic.md`, `docs/v2-regression-diagnosis.md`, and `docs/data/v2-prefix-fixed-diagnostic-summary.csv` for the derived, commit-safe data. Raw run logs stay ignored under `runs/`.
 
 ## Feature 1: Codex Cache-Hit Audit
 
@@ -134,6 +111,41 @@ The bundled Rust CLI is read-only by default. It inspects a Codex `config.toml` 
 It also prints HTTP and WebSocket configuration templates with placeholder router settings. Set `MAKE_AGENTS_CHEAPER_EXPECTED_BASE_URL` when you want the audit to verify a private endpoint without putting that endpoint in source control.
 
 ## Quick Start
+
+### Install Or Run Locally
+
+Prerequisites:
+
+- Rust toolchain with `cargo`.
+- Optional for paper builds: `latexmk`, `pdflatex`, `bibtex`, `pdfinfo`, and `pdffonts`.
+- Optional for Claude Code experiments: `claude` CLI.
+
+On macOS, the CLI path is the same as Linux:
+
+```bash
+git clone https://github.com/3873225350/make-agents-cheaper.git
+cd make-agents-cheaper
+cargo test
+cargo run --quiet -- --help
+```
+
+To install the binary from a local checkout:
+
+```bash
+cargo install --path .
+make-agents-cheaper --help
+```
+
+Or install directly from GitHub:
+
+```bash
+cargo install --git https://github.com/3873225350/make-agents-cheaper.git
+make-agents-cheaper --help
+```
+
+macOS release binaries and a Homebrew formula template are tracked for tagged releases; see `docs/release.md`.
+
+### Workflow 1: Audit Codex Config
 
 Ask Codex:
 
@@ -171,7 +183,87 @@ Inspect a custom config path:
 cargo run --quiet -- --config /path/to/config.toml
 ```
 
-## New: Skill / Audit / Eval Commands
+### Workflow 2: Compare Existing Run Logs
+
+Try the bundled sanitized real example first:
+
+```bash
+cargo run --quiet -- eval \
+  --baseline examples/baseline.jsonl \
+  --candidate examples/cache-friendly.jsonl
+
+cargo run --quiet -- task-report \
+  --baseline examples/baseline.jsonl \
+  --candidate examples/cache-friendly.jsonl
+```
+
+The default `examples/` pair is derived from a real Claude Code + MiMo paired-drift run with raw trace paths removed. A fixed V2 diagnostic pair is also available as `examples/v2-fixed-diagnostic-baseline.jsonl` and `examples/v2-fixed-diagnostic-cache-friendly.jsonl`. The earlier mixed/negative V2 pilot remains available as `examples/v2-mixed-baseline.jsonl` and `examples/v2-mixed-cache-friendly.jsonl` for regression analysis.
+
+Then use the same commands on normalized benchmark records:
+
+```bash
+cargo run --quiet -- eval \
+  --baseline runs/<experiment>/baseline.jsonl \
+  --candidate runs/<experiment>/cache-friendly.jsonl
+
+cargo run --quiet -- task-report \
+  --baseline runs/<experiment>/baseline.jsonl \
+  --candidate runs/<experiment>/cache-friendly.jsonl
+
+cargo run --quiet -- analysis-report \
+  --baseline runs/<experiment>/baseline.jsonl \
+  --candidate runs/<experiment>/cache-friendly.jsonl \
+  --output runs/<experiment>/analysis-report.md
+```
+
+Extract tool-claimed code changes from a session or tool-history JSONL without reading the current worktree:
+
+```bash
+cargo run --quiet -- evidence-diff \
+  --input runs/<experiment>/raw/session.jsonl \
+  --output runs/<experiment>/code-changes.json
+```
+
+Read the result conservatively:
+
+- A win requires lower uncached input and no task-success regression.
+- Warm-up calls should stay out of measured JSONL.
+- If `cache_accounting_observable=false`, do not claim token-cost savings from that row.
+- Lower output tokens or fewer total tokens are not the main claim.
+
+### Workflow 3: Plan A Claude Code Pilot
+
+Generate a reproducible experiment directory and a paired command plan from the V2 manifest:
+
+```bash
+cargo run --quiet -- init-experiment --dir runs/<date>-claude-mimo-real-coding-v2-pilot
+
+cargo run --quiet -- pilot-plan \
+  --manifest docs/task-suites/real-coding-ablation-v2.manifest.json \
+  --task docs-token-accounting \
+  --experiment-dir runs/<date>-claude-mimo-real-coding-v2-pilot \
+  --slice dynamic-drift \
+  --repeats 1
+```
+
+The generated plan prints the prompt file, warm-up calls, measured calls, validation logs, direct Claude JSON capture path, `claude-json-import`, `eval`, `task-report`, and `analysis-report` commands.
+
+To generate a runnable script instead of only printing the plan:
+
+```bash
+cargo run --quiet -- run-pilot \
+  --manifest docs/task-suites/real-coding-ablation-v2.manifest.json \
+  --task docs-token-accounting \
+  --experiment-dir runs/<date>-claude-mimo-real-coding-v2-pilot \
+  --slice dynamic-drift \
+  --repeats 1
+```
+
+By default, `run-pilot` only writes `runs/<experiment>/notes/run-pilot.sh`. Execute it manually with `bash`, or pass `--execute true` when you intentionally want the CLI to call Claude. Running it may incur model cost.
+
+The V2 pilot manifest points at `runs/fixtures/real-coding-v2`, which is intentionally ignored as local experiment state. Fresh clones can use `examples/` immediately; Claude pilot execution requires creating or restoring that fixture first.
+
+## Command Reference
 
 These commands are the first executable pieces of the portable cache-hit layer for existing agents.
 
@@ -380,11 +472,17 @@ env_key = "CACHE_ROUTER_API_KEY"
 - Evaluation metric spec: `docs/evaluation-metrics.md`
 - Full experiment protocol: `docs/evaluation-protocol.md`
 - Paired ablation runbook: `docs/paired-ablation-runbook.md`
+- Project positioning and origin: `docs/project-positioning.md`
 - First task-suite dataset: `docs/task-suites/claude-cache-ablation-v1.md`
 - Real coding-task suite: `docs/task-suites/real-coding-ablation-v1.md`
 - Phenomena analysis log: `docs/phenomena-analysis.md`
 - MiMo token accounting note: `docs/mimo-token-accounting.md`
-- V2 direct-json pilot snapshot: `docs/v2-direct-json-pilot.md`
+- V2 fixed prefix diagnostic: `docs/v2-prefix-fixed-diagnostic.md`
+- V2 direct-json regression snapshot: `docs/v2-direct-json-pilot.md`
+- V2 regression diagnosis: `docs/v2-regression-diagnosis.md`
+- RTK inspiration and next runtime layer: `docs/rtk-inspiration.md`
+- Session/tool evidence diff: `docs/evidence-diff.md`
+- Release and Homebrew plan: `docs/release.md`
 - Long-term task plan: `taskplan/roadmap.md`
 
 The evaluation goal is not to show fewer total tokens. It is to show:
@@ -392,7 +490,7 @@ The evaluation goal is not to show fewer total tokens. It is to show:
 ```text
 cached tokens go up
 uncached paid input goes down
-estimated cost goes down
+observed or estimated cost goes down when output/tool behavior is comparable
 latency does not regress
 task success does not regress
 ```

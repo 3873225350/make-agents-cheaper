@@ -203,7 +203,7 @@ The core claim is valid only when:
 ```text
 cached tokens go up
 uncached input goes down
-estimated cost goes down
+observed or estimated cost goes down when output/tool behavior is comparable
 latency does not regress
 task success does not regress
 ```

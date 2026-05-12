@@ -16,12 +16,12 @@ larger real coding-task suite v2: dataset manifest ready
 trace capture pipeline: optional only; not required for current roadmap
 direct Claude JSON capture: current default path with claude-json-import
 claude-trace recovery workflow: repurposed as .claude/skills/claude-trace-recovery/ direct-json workflow
-real coding-task pilot: direct-json V2 pilot complete; mixed/negative for savings claim
-full task matrix: ready-to-run matrix plan
+real coding-task pilot: fixed V2 prefix diagnostic positive for narrow claim
+full task matrix: ready-to-run matrix plan, after fixed diagnostic expansion
 full task matrix scaffold: generated under runs/2026-05-11-claude-mimo-real-coding-v2-full/
 first full-matrix live slice: attempted; blocked by noninteractive write permission and low budget cap
 permission diagnostic: bypassPermissions works on ignored fixture; generated pilot plans refreshed
-analysis/paper tables: report generator includes per-slice all-runs table
+analysis/paper tables: fixed V2 diagnostic table updated
 skill packaging: standardized workflow synchronized
 skill usability ablation: local dry-run checked
 ```
@@ -49,9 +49,9 @@ and can reduce observed input cost without reducing task success.
 | 3 | Define realistic task-suite v1 | `subtasks/03-real-coding-task-suite.md` | [x] done |
 | 3a | Define larger real-coding task-suite v2 | `subtasks/09-real-coding-v2-suite.md` | [x] defined |
 | 3b | Add raw trace capture pipeline | `subtasks/10-trace-capture-pipeline.md` | [~] direct-json default implemented; trace optional |
-| 4 | Run paired A/B pilot on 1-2 tasks | `subtasks/04-pilot-run.md` | [x] direct-json V2 pilot complete; mixed/negative savings result |
-| 5 | Scale to a full task matrix | `subtasks/05-scale-evaluation.md` | [~] scaffold generated; pilot says refine before scaling |
-| 6 | Add analysis and paper-facing tables | `subtasks/06-analysis-and-paper.md` | [~] report generator ready with per-slice table |
+| 4 | Run paired A/B pilot on 1-2 tasks | `subtasks/04-pilot-run.md` | [x] fixed V2 prefix diagnostic positive |
+| 5 | Scale to a full task matrix | `subtasks/05-scale-evaluation.md` | [~] scaffold generated; expand from fixed diagnostic |
+| 6 | Add analysis and paper-facing tables | `subtasks/06-analysis-and-paper.md` | [x] current fixed V2 table updated |
 | 7 | Package reusable skill/audit workflow | `subtasks/07-skill-packaging.md` | [~] workflow synchronized |
 | 8 | Test skill usability as an auxiliary ablation | `subtasks/08-skill-usability-ablation.md` | [~] local dry-run checked |
 
@@ -93,6 +93,14 @@ and can reduce observed input cost without reducing task success.
      - `dynamic-drift`: candidate uncached input 13,930 vs baseline 6,470 (2.153x).
      - Aggregate: candidate uncached input 21,235 vs baseline 14,632 (1.451x).
      - Conclusion: this pilot does not support the primary savings claim; treat it as mixed/negative evidence and diagnose before scaling.
+   - [x] Fixed dynamic-drift diagnostic after runner and fixture-isolation fixes.
+     - Experiment: `runs/2026-05-12-claude-mimo-v2-diagnostic-r3/`.
+     - Imported measured rows: 3 baseline and 3 cache-friendly.
+     - All imported measured rows passed validation.
+     - Cache hit rate: candidate 97.67% vs baseline 91.66%.
+     - Candidate uncached input: 7,817 vs baseline 30,082 (0.260x).
+     - Observed cost: $0.258237 vs $0.366976 (0.704x).
+     - Conclusion: the prefix-cache intervention is working in the fixed V2 dynamic-drift diagnostic. Tool/output behavior remains a separate future optimization layer.
    - [x] Per-run token usage and validation logs for the live direct-JSON pilot.
    - [x] Implement `trace-import` for normalizing raw trace logs into audit/eval rows.
    - [x] Generate full task-matrix command plans from the manifest.
@@ -111,7 +119,7 @@ and can reduce observed input cost without reducing task success.
    - [x] State that the current studied harness is Claude Code.
    - [x] State that the current backend route is MiMo, such as `mimo-v2.5-pro`.
    - [x] State that evidence comes from audit/eval logs, not from the skill layer.
-   - [ ] Fill final LaTeX result tables after live V2 pilot/full-matrix runs exist.
+   - [x] Fill current LaTeX result table with the fixed V2 prefix diagnostic.
 5. [ ] Test the skill layer as auxiliary evidence.
    - [x] Synchronize the Claude skill adapter with the executable main-repo protocol.
    - [x] Add a scoring rubric for skill usability/reproducibility.

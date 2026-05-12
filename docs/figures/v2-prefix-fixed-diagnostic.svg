@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="520" viewBox="0 0 920 520" role="img" aria-labelledby="title desc">
+  <title id="title">V2 fixed prefix-cache diagnostic</title>
+  <desc id="desc">Three measured dynamic-drift repeats show cache-friendly lower paid uncached input and lower observed cost with task success preserved.</desc>
+  <style>
+    .title { font: 700 28px system-ui, -apple-system, Segoe UI, sans-serif; fill: #0b1728; }
+    .sub { font: 15px system-ui, -apple-system, Segoe UI, sans-serif; fill: #44546a; }
+    .h { font: 700 18px system-ui, -apple-system, Segoe UI, sans-serif; fill: #0b1728; }
+    .label { font: 700 14px system-ui, -apple-system, Segoe UI, sans-serif; fill: #0b1728; }
+    .value { font: 14px system-ui, -apple-system, Segoe UI, sans-serif; fill: #0b1728; }
+    .note { font: 14px system-ui, -apple-system, Segoe UI, sans-serif; fill: #263548; }
+    .small { font: 12px system-ui, -apple-system, Segoe UI, sans-serif; fill: #53657a; }
+    .base { fill: #536f7b; }
+    .cand { fill: #ec7054; }
+    .grid { stroke: #d9e1ea; stroke-width: 1; }
+    .box { fill: #f6f8fb; stroke: #d7e0ea; rx: 8; }
+  </style>
+  <rect width="920" height="520" fill="#ffffff"/>
+  <text x="72" y="58" class="title">V2 Fixed Diagnostic: Prefix Cache Works</text>
+  <text x="72" y="86" class="sub">Claude Code harness, MiMo route, dynamic-drift slice, 3 measured repeats per condition. Warm-ups excluded.</text>
+  <line x1="72" y1="112" x2="848" y2="112" class="grid"/>
+
+  <circle cx="86" cy="142" r="6" class="base"/><text x="104" y="147" class="value">baseline</text>
+  <circle cx="184" cy="142" r="6" class="cand"/><text x="202" y="147" class="value">cache-friendly prefix layout</text>
+
+  <text x="72" y="190" class="h">Paid uncached input</text>
+  <text x="72" y="212" class="small">lower is better; provider cache accounting observed</text>
+  <text x="72" y="256" class="label">dynamic-drift</text>
+  <rect x="202" y="238" width="260.0" height="18" rx="3" class="base"/>
+  <text x="474.0" y="253" class="value">30,082</text>
+  <rect x="202" y="274" width="67.6" height="18" rx="3" class="cand"/>
+  <text x="281.6" y="289" class="value">7,817 (0.260x)</text>
+
+  <text x="540" y="190" class="h">Observed cost</text>
+  <text x="540" y="212" class="small">output/tool behavior remains a separate cost layer</text>
+  <text x="540" y="256" class="label">dynamic-drift</text>
+  <rect x="670" y="238" width="168.0" height="18" rx="3" class="base"/>
+  <text x="848" y="253" class="value">$0.3670</text>
+  <rect x="670" y="274" width="118.3" height="18" rx="3" class="cand"/>
+  <text x="798" y="289" class="value">$0.2582 (0.704x)</text>
+
+  <rect x="72" y="336" width="776" height="108" class="box"/>
+  <text x="96" y="368" class="h">Interpretation guardrail</text>
+  <text x="96" y="398" class="note">Cache-friendly raised hit rate from 91.66% to 97.67% and reduced paid uncached input by 74.0%.</text>
+  <text x="96" y="424" class="note">Validation and task success stayed at 3/3 vs 3/3. Output tokens slightly increased (2,054 to 2,224), so tool/output optimization is future work.</text>
+
+  <text x="72" y="482" class="small">Source: docs/data/v2-prefix-fixed-diagnostic-summary.csv; derived from ignored local run logs, not raw traces.</text>
+</svg>

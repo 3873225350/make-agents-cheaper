@@ -120,6 +120,28 @@ Task success, successful-only subset & diagnostic only & diagnostic only \\
 \end{tabularx}
 \end{table}
 
+\subsection{Current V2 Prefix Diagnostic}
+
+The latest repository snapshot includes a fixed bounded direct-JSON diagnostic on the \texttt{docs-token-accounting} task, using Claude Code as the studied harness and \texttt{mimo-v2.5-pro} as the backend route. The run used three measured repeats for each condition on the \texttt{dynamic-drift} slice. Warm-up calls are excluded from the JSONL summary below.
+
+\begin{table}[h]
+\centering
+\caption{Fixed V2 dynamic-drift diagnostic. Lower uncached input is better.}
+\label{tab:v2-pilot}
+\small
+\begin{tabularx}{\linewidth}{@{}lrrrrr@{}}
+\toprule
+\textbf{Slice} & \textbf{Baseline uncached} & \textbf{Cache-friendly uncached} & \textbf{Ratio} & \textbf{Cost ratio} & \textbf{Success} \\
+\midrule
+\texttt{dynamic-drift} & 30{,}082 & 7{,}817 & 0.260$\times$ & 0.704$\times$ & 3/3 vs. 3/3 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The fixed diagnostic supports the narrow prefix-cache claim: moving dynamic harness state later increased cache hit rate from 91.66\% to 97.67\% and reduced paid uncached input from 30{,}082 to 7{,}817 tokens while preserving validation and task success. Observed cost also fell, but only to 0.704$\times$ baseline because output tokens increased slightly from 2{,}054 to 2{,}224. This distinction matters. The prefix intervention is incremental; it reduces paid repeated input, but it does not by itself optimize tool-output verbosity or guarantee fewer agent turns.
+
+The earlier V2 direct-JSON pilot is retained as regression evidence rather than removed. In that pilot, the \texttt{dynamic-drift} aggregate regressed because one cache-friendly measured run used 14 Claude Code turns, compared with 6 turns for the matched baseline, increasing both repeated input and output. The runner also exposed a protocol flaw: the V2 fixture was nested under \texttt{runs/} without an isolated Git repository, so dynamic Git status could discover the parent worktree rather than only fixture-local state. After adding absolute prompt paths, \texttt{GIT\_CEILING\_DIRECTORIES}, and fixture-local Git initialization, the three-repeat diagnostic above returned to the expected direction. Because direct Claude JSON does not expose request-shape artifacts, this evidence is cache-accounting evidence rather than a complete prompt-layout trace.
+
 \subsection{Report Regeneration}
 
 The repository provides a report generator that turns the same JSONL files used by \texttt{eval} and \texttt{task-report} into paper-facing Markdown tables:

@@ -1,0 +1,3 @@
+slice,condition,records,cache_hit_pct,uncached_input,output_tokens,observed_cost_usd,turns,validation_passed,task_success
+dynamic-drift,baseline,3,91.66,30082,2054,0.366976,15,3/3,3/3
+dynamic-drift,cache-friendly,3,97.67,7817,2224,0.258237,15,3/3,3/3
